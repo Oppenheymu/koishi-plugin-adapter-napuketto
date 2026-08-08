@@ -36,10 +36,11 @@ koishi 插件（本包）                    Napuketto 子进程（self-host.cjs
 | 6 | `src/bot/` Bot 集成 | ✅ | d8ac06c | **端到端验证点**，NapukettoBot + MessageEncoder + launch |
 | 6.5 | 类型修复 + selfHostEntry（收尾启动） | ✅ | 6867d70 + ff0e369 | Context 泛型逆变修复 + 发布形态方案 a（config 覆盖入口） |
 | 6.8 | dispatch 链路三 bug 修复 + 构建修复 | ✅ | 三稿 | **数据库无记录的根因**（content 覆盖 elements / img 元素 / isDirect），见 §5 |
+| 6.9 | fallow 静态分析优化（2026-08-09） | ✅ | 四稿 | 死代码 51→0、重复 63→0 行、MI 91.2→92.1，见 §5.1 |
 | 7 | 收尾（多账号/文档/发布） | ⏳ **下一步** | — | 端到端联调（进行中）+ changesets + koishi 市场 |
 
-**子仓库 HEAD = 三稿提交**；主仓库 HEAD = 017376d（含 koishi submodule 指针更新），工作区干净。
-**新会话第一件事：push 两个仓库到 origin**（主仓库 + 子仓库三稿提交）。
+**子仓库 HEAD = 四稿提交**；主仓库 HEAD 待更新（含 koishi submodule 指针）。
+**新会话第一件事：push 两个仓库到 origin**（主仓库 + 子仓库四稿提交）。
 
 ## 3. 已实现模块速览（新会话必读）
 
@@ -167,6 +168,40 @@ koishi 插件（本包）                    Napuketto 子进程（self-host.cjs
 
 **验证**：单测 274 全绿（新增 img 兼容 + isDirect 断言）；biome + tsc 通过。剩余验证点：
 koishi 控制台实收 QQ 消息（需重启 koishi-dev 联调，dispatch 链路已修）。
+
+### fallow 静态分析优化（2026-08-09 四稿）
+
+`pnpm dlx fallow -r .`（子仓库根，自动发现新建的 `.fallowrc.jsonc`）驱动一轮清理：
+**dead exports 22.7%→0%（51 issues→0）、重复 63 行(2.7%,2 组)→0、MI 91.2→92.1**。
+
+代码改动（全部行为等价，88 单测回归通过）：
+1. **`src/ipc/subscribers.ts`（新）**：`SubscriberSet` 通用订阅集合；`transport.ts` 与
+   `test-utils.ts`（MemoryLinePair）的 onLine/onClose/close 样板重复 → 提取抽象基类
+   `BaseLineTransport`（transport.ts），子类只实现 write + 数据源接线。
+2. **`src/actions/elements.ts`**：`toCanonicalElement`（CRITICAL，25 cyclomatic）→ 判别式
+   handler 映射表（`elementHandlers`），`img/audio` 共提取 `mediaElement`、`at/face/quote`
+   共提取 `takeId`；`LooseElement` 去导出（内部类型）。
+3. **barrel 瘦身（ipc/driver）**：只 re-export 有内部消费者的符号，其余由消费方直接
+   `import ... from "./types.js"`（无死导出）。`ipc/client.ts` 删无人调用的 `sendPing`、
+   `DEFAULT_REQUEST_TIMEOUT_MS`/`IpcClientOptions` 去导出；`driver/driver.ts` 删无人调用的
+   `dispose`；`driver/test-utils.ts` `FakeChild` 去导出。
+4. **`events/elements.ts`** 删 `bindKoishiH`（无消费者，bot.ts `adaptH` 是等价实现）；
+   **`src/index.ts`** 去重复导出（`export *` 已含 NapukettoBot，末尾显式导出冗余）；
+   **package.json** 删未使用的 `@napuketto/adapter`。
+
+**配置（`.fallowrc.jsonc`，子仓库根新建，勿删）**：
+- `rules.dev-dependencies-in-production: off`——@napuketto/kernel/loader 刻意放
+  devDependencies（发布形态自包含 bundle，见 §5 发布形态），非依赖卫生问题。
+- `overrides` 按文件关 `unused-class-members`：bot.ts（koishi Bot 框架 override 契约）、
+  client.ts（alive/sendControl 经 null 联合属性访问，fallow 流分析漏报）、driver.ts
+  （restartAttempts 测试断言 + 诊断 API）。
+- `ignoreFindings`：login/index.ts（LoginObserver/LoginSnapshot/LoginView 公共类型，
+  LoginView 供 QR 展示接入）。`ignoreExports`：bot.ts NapukettoBot（class+namespace
+  声明合并，napcat 同构模式）。
+
+**接受的现状**：5 个 high-complexity 函数（bot.ts getLogin/dispatchSession/data、
+message.ts prepare/flush）——koishi Bot 框架集成代码（null 检查/条件展开），复杂度合理；
+CRAP 高因未测试（bot/message.ts import koishi 不进单测），端到端联调后补测试覆盖。
 
 ### 构建修复：dts 打包错误（2026-08-08 深夜三稿）
 

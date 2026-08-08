@@ -20,7 +20,7 @@ import {
 } from "./types.js";
 
 /** 动作请求默认超时（毫秒）。 */
-export const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 
 /** pending 请求条目。 */
 interface PendingRequest {
@@ -31,7 +31,7 @@ interface PendingRequest {
 }
 
 /** 客户端选项。 */
-export interface IpcClientOptions {
+interface IpcClientOptions {
     /** 动作请求超时（毫秒，默认 60s）。 */
     requestTimeoutMs?: number;
 }
@@ -121,11 +121,6 @@ export class NapukettoIpcClient {
                 params === undefined ? { action } : { action, params };
             this.send({ v: IPC_VERSION, type: "action", id, payload });
         });
-    }
-
-    /** 主动发送心跳（driver 探活用；子进程应回 pong 更新 pongAt）。 */
-    sendPing(): void {
-        this.send({ v: IPC_VERSION, type: "ping" });
     }
 
     /** 发送控制指令（stop / restart / login）。 */

@@ -46,7 +46,6 @@
     },
     "devDependencies": {
         "@biomejs/biome": "^2.5.6",
-        "@napuketto/adapter": "workspace:*",
         "@napuketto/kernel": "workspace:*",
         "@napuketto/loader": "workspace:*",
         "@satorijs/core": "4.6.0",

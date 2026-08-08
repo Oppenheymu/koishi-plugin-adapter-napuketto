@@ -121,11 +121,6 @@ export class NapukettoDriver {
         }, STOP_TIMEOUT_MS);
     }
 
-    /** 销毁（stop + 资源清理）。 */
-    dispose(): void {
-        this.stop();
-    }
-
     // ── 内部 ──
 
     private spawnProcess(reason: "start" | "restart"): void {

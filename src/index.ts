@@ -27,6 +27,8 @@ export const usage = `
 </div>
 `;
 
-export { Config, NapukettoBot };
+// NapukettoBot 经 export * from "./bot/index.js" 已导出；这里只补 Config
+// （bot.ts namespace 声明合并成员，不走 barrel 链）。
+export { Config };
 
 export default NapukettoBot;

@@ -13,8 +13,8 @@ import { MemoryLinePair } from "../ipc/test-utils.js";
 import { NapukettoDriver } from "./driver.js";
 import type { ChildProcessLike, DriverEvents } from "./types.js";
 
-/** 假子进程：可手动触发 exit。 */
-export class FakeChild implements ChildProcessLike {
+/** 假子进程：可手动触发 exit（仅 createHarness 内部使用）。 */
+class FakeChild implements ChildProcessLike {
     readonly stdout: NodeJS.ReadableStream = new Writable({
         write(_c, _e, cb) {
             cb();

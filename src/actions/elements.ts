@@ -16,7 +16,7 @@
 import type { CanonicalElement } from "@napuketto/kernel";
 
 /** koishi 元素宽松结构（h() 元素，不 import koishi 主包）。 */
-export interface LooseElement {
+interface LooseElement {
     type: string;
     attrs?: Record<string, unknown>;
     children?: unknown[];
@@ -54,57 +54,72 @@ function isLooseElement(value: unknown): value is LooseElement {
     );
 }
 
+/** attrs.id 取值；空 → null（调用方降级原样文本）。 */
+function takeId(attrs: Record<string, unknown>): string | null {
+    const id = String(attrs["id"] ?? "");
+    return id === "" ? null : id;
+}
+
+/** 媒体元素（img/image/audio）：src 空 → 原样文本；URL → 占位文本；本地路径 → canonical 媒体。 */
+function mediaElement(
+    element: LooseElement,
+    attrs: Record<string, unknown>,
+    label: "图片" | "语音",
+    kind: "image" | "voice",
+): CanonicalElement {
+    const src = String(attrs["src"] ?? "");
+    if (src === "") {
+        return { type: "text", text: element.toString() };
+    }
+    return isHttpUrl(src)
+        ? { type: "text", text: `[${label}: ${src}]` }
+        : kind === "image"
+          ? { type: "image", path: src }
+          : { type: "voice", path: src };
+}
+
+/** 元素类型 → 处理器（判别式映射表；未收录类型走默认降级 text）。 */
+const elementHandlers: Record<
+    string,
+    (element: LooseElement, attrs: Record<string, unknown>) => CanonicalElement
+> = {
+    text: (element, attrs) => {
+        // koishi text 元素内容在 attrs.content（napcat 实证），children 兜底
+        const content = String(attrs["content"] ?? "");
+        const childrenText = element.children?.map(String).join("") ?? "";
+        return { type: "text", text: content !== "" ? content : childrenText };
+    },
+    br: () => ({ type: "text", text: "\n" }),
+    at: (element, attrs) => {
+        const id = takeId(attrs);
+        return id === null
+            ? { type: "text", text: element.toString() }
+            : { type: "at", target: id };
+    },
+    img: (element, attrs) => mediaElement(element, attrs, "图片", "image"),
+    // koishi 标准图片元素是 img（h("img", ...)），兼容旧 image 写法
+    image: (element, attrs) => mediaElement(element, attrs, "图片", "image"),
+    face: (element, attrs) => {
+        const id = takeId(attrs);
+        return id === null ? { type: "text", text: element.toString() } : { type: "face", id };
+    },
+    audio: (element, attrs) => mediaElement(element, attrs, "语音", "voice"),
+    quote: (element, attrs) => {
+        const id = takeId(attrs);
+        return id === null
+            ? { type: "text", text: element.toString() }
+            : { type: "reply", messageId: id };
+    },
+};
+
 /** 单个 koishi 元素 → canonical。 */
 function toCanonicalElement(element: LooseElement): CanonicalElement {
     const attrs = element.attrs ?? {};
-    switch (element.type) {
-        case "text": {
-            // koishi text 元素内容在 attrs.content（napcat 实证），children 兜底
-            const content = String(attrs["content"] ?? "");
-            const childrenText = element.children?.map(String).join("") ?? "";
-            const text = content !== "" ? content : childrenText;
-            return { type: "text", text };
+    // 未识别类型（p/video/file/…）：降级 text（保内容不丢，后续扩充）
+    return (
+        elementHandlers[element.type]?.(element, attrs) ?? {
+            type: "text",
+            text: element.toString(),
         }
-        case "br":
-            return { type: "text", text: "\n" };
-        case "at": {
-            const id = String(attrs["id"] ?? "");
-            return id === ""
-                ? { type: "text", text: element.toString() }
-                : { type: "at", target: id };
-        }
-        case "img":
-        case "image": {
-            // koishi 标准图片元素是 img（h("img", ...)），兼容旧 image 写法
-            const src = String(attrs["src"] ?? "");
-            if (src === "") {
-                return { type: "text", text: element.toString() };
-            }
-            return isHttpUrl(src)
-                ? { type: "text", text: `[图片: ${src}]` } // URL 需下载后发送（后续轮次）
-                : { type: "image", path: src };
-        }
-        case "face": {
-            const id = String(attrs["id"] ?? "");
-            return id === "" ? { type: "text", text: element.toString() } : { type: "face", id };
-        }
-        case "audio": {
-            const src = String(attrs["src"] ?? "");
-            if (src === "") {
-                return { type: "text", text: element.toString() };
-            }
-            return isHttpUrl(src)
-                ? { type: "text", text: `[语音: ${src}]` }
-                : { type: "voice", path: src };
-        }
-        case "quote": {
-            const id = String(attrs["id"] ?? "");
-            return id === ""
-                ? { type: "text", text: element.toString() }
-                : { type: "reply", messageId: id };
-        }
-        default:
-            // p/br/video/file/…：降级 text（保内容不丢，后续扩充）
-            return { type: "text", text: element.toString() };
-    }
+    );
 }
