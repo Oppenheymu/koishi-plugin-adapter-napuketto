@@ -179,7 +179,14 @@ export class NapukettoIpcClient {
         if (payload.ok) {
             pending.resolve(payload.value);
         } else {
-            pending.reject(new IpcError(payload.error.message, payload.error.code));
+            // 诊断（2026-08-09）：错误消息带上 action 名，方便日志反查
+            // 是哪个动作失败（子进程完整堆栈见 boot 日志）。
+            pending.reject(
+                new IpcError(
+                    `动作 ${pending.action} 失败: ${payload.error.message}`,
+                    payload.error.code,
+                ),
+            );
         }
     }
 
