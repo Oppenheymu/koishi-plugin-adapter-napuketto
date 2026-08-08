@@ -1,4 +1,4 @@
-# koishi-plugin-adapter-napuketto 交接（2026-08-08 深夜）
+# koishi-plugin-adapter-napuketto 交接（2026-08-08 深夜二稿：端到端联调启动）
 
 > **新对话开场指引（照抄主仓库惯例）**：先读本文件 → `docs/design.md`（总体设计 +
 > 已实现模块标注）→ 主仓库 `docs/STATUS.md` / `AGENTS.md` / `docs/architecture.md`。
@@ -22,7 +22,7 @@ koishi 插件（本包）                    Napuketto 子进程（self-host.cjs
   └─ 事件桥（events/） → bot.dispatch  →    ← action 请求 → kernel API
 ```
 
-## 2. 施工进度（截至 2026-08-08 深夜，已全部提交）
+## 2. 施工进度（截至 2026-08-08 深夜二稿，已全部提交）
 
 | 实现顺序（design.md §6） | 模块 | 状态 | 提交（子仓库） | 备注 |
 |---|---|---|---|---|
@@ -33,11 +33,12 @@ koishi 插件（本包）                    Napuketto 子进程（self-host.cjs
 | 3 | `src/login/` 登录交互层 | ✅ | 6e1efbf | 状态机/QR 缓冲，8 单测 |
 | 4 | `src/events/` 事件桥 | ✅ | 31f3504 | **地基验证点**，17 单测 |
 | 5 | `src/actions/` 动作桥 | ✅ | 801067b | koishi 动作 → IPC action，27 单测 |
-| 6 | `src/bot/` Bot 集成 | ✅ | <新提交> | **端到端验证点**，NapukettoBot + MessageEncoder + launch |
-| 7 | 收尾（多账号/文档/发布） | ⏳ **下一步** | — | 端到端联调 + changesets + koishi 市场 |
+| 6 | `src/bot/` Bot 集成 | ✅ | d8ac06c | **端到端验证点**，NapukettoBot + MessageEncoder + launch |
+| 6.5 | 类型修复 + selfHostEntry（收尾启动） | ✅ | 6867d70 + ff0e369 | Context 泛型逆变修复 + 发布形态方案 a（config 覆盖入口） |
+| 7 | 收尾（多账号/文档/发布） | ⏳ **下一步** | — | 端到端联调（进行中）+ changesets + koishi 市场 |
 
-**子仓库 HEAD = <新提交>（Bot 集成）**，工作区干净；主仓库 HEAD 待更新（submodule 指针）。
-**新会话第一件事：push 两个仓库到 origin**（子仓库 + 主仓库各领先 origin 若干提交）。
+**子仓库 HEAD = ff0e369，工作区干净**；主仓库 HEAD = ad79d68，工作区干净，**领先 origin 5 提交未 push**。
+**新会话第一件事：push 两个仓库到 origin**（主仓库 5 提交 + 子仓库已同步）。
 
 ## 3. 已实现模块速览（新会话必读）
 
@@ -105,13 +106,18 @@ koishi 插件（本包）                    Napuketto 子进程（self-host.cjs
 - `launch.ts`：`resolveEntry`（override 优先，否则 import.meta.resolve）+ `resolveLaunchOptions`
   （纯函数，组装 launchSelfHost 选项：IPC + selfHost + pipe stdio + quickUin= selfId；deps 注入
   假 QQ 解析可单测）+ `buildLaunch`（DriverLauncher，child cast 适配 ChildProcessLike）
-- `config.ts`：`NapukettoBotConfig`（selfId 必填 + qqPath/stubDir/dataDir/kernelEntry 覆盖 +
-  restart/heartbeatTimeoutMs）+ `napukettoConfigSchema`
+- `config.ts`：`NapukettoBotConfig`（selfId 必填 + qqPath/stubDir/dataDir/kernelEntry/
+  **selfHostEntry** 覆盖 + restart/heartbeatTimeoutMs）+ `napukettoConfigSchema`
 - `index.ts`：默认导出 `NapukettoBot`（koishi 自动注册平台）+ 导出 Config/actions/events
 - 测试：launch 纯函数 5 单测；bot/message/config/index 运行时 import koishi 不进单测
+- **⚠️ Context 来源（6867d70 修复）**：`import { Context } from "koishi"` 是 koishi 自己的
+  Context（含 `[minato.Types]` 泛型），在 exactOptionalPropertyTypes 下不满足 satorijs `Bot`
+  泛型约束（逆变不兼容，旧 TS 5.x 语言服务报 TS2344）→ **改用 `@satorijs/core` 的 Context**
+  （Bot 约束正主，devDeps 已加 4.6.0 与 koishi 同实例）。TS7 原生语言服务（VS Code
+  `js/ts.experimental.useTsgo` + typescriptteam.native-preview 扩展）下旧版本不报错。
 - **⚠️ 发布形态（HANDOVER §5 记录）**：bundle 后 `import.meta.resolve` 失效（tsdown 警告
-  EMPTY_IMPORT_META）、launchSelfHost 的 `__dirname` 定位 self-host.cjs 失效——生产发布需
-  config 显式覆盖 kernelEntry 或改依赖形态（收尾步骤 7）
+  EMPTY_IMPORT_META）、launchSelfHost 的 `__dirname` 定位 self-host.cjs 失效——**方案 a
+  已落地**：config 显式覆盖 kernelEntry/selfHostEntry（联调实测有效）。
 
 ## 4. 主仓库前置（§7 已落地，勿重复）
 
@@ -124,18 +130,27 @@ koishi 插件（本包）                    Napuketto 子进程（self-host.cjs
 
 ## 5. 下一步：收尾（实现顺序第 7 步）
 
+### 端到端联调现状（2026-08-08 深夜二稿，已确认）
+1. ✅ **IPC 链路全通**（probe 脚本实测）：booting → dlopening → logging → logged_in
+   （快速登录 3567141148）→ sessioning → **ready**。脚本：主仓库 `scripts/e2e/ipc-probe.mjs`。
+2. ✅ **动作链路通**：`login.getSelf` 秒回（uin/nickname）；`group.getGroupList` 修复后
+   返回 8 个群（见主仓库 e27fb55：原生 getGroupList 返回值无数据，列表经事件推送，
+   改从 GroupCache 读）。
+3. ✅ **koishi-dev 宿主加载插件成功**：koishi.yml 单 bot 配置 + config 显式覆盖
+   kernelEntry/selfHostEntry（bundle 产物 import.meta.resolve 失效——**development 条件
+   未生效**，koishi loader 用 require() 走 exports.default 的 lib/index.cjs）。
+4. ✅ **真实 QQ 消息到达 koishi 侧**（debug 日志实证：事件转发 + getLogin OK）。
+5. ⚠️ **待确认**：事件桥 dispatch 到 koishi 会话（数据库无 napuketto 记录，可能 session
+   content 为空或 dispatch 未生效）；动作桥回复链路（sandbox 发 help 未确认回复）。
+
 ### 待办
-1. **端到端联调（最高优先）**：koishi 进程（NODE_ENV=development 直载 src + 主仓库各包
-   已 build）加载插件 → bots 配置 `napuketto:<uin>` → spawn self-host 子进程（IPC）→
-   快速登录（`quickUin`）→ READY → 控制台收到消息 + 能回复。这是「端到端验证点」的
-   最终确认——**当前所有模块是单测通过的组装件，联调会暴露真实集成问题**。
+1. **端到端联调收尾（最高优先）**：确认 koishi 控制台收到 QQ 消息 + 能回复。重点排查
+   dispatch 链路（events/bridge → bot.dispatch → koishi 会话）。
 2. **QR 登录展示**：`login.onQr`（pngBase64）→ koishi 控制台 <img>（LoginView 已定义，
    bot.ts 尚未接 console）。
-3. **发布形态（⚠️ 已知问题）**：`@napuketto/*` 被 bundle 进产物后 `import.meta.resolve`
-   失效（tsdown EMPTY_IMPORT_META 警告实证）+ `launchSelfHost` 的 `__dirname` 定位
-   self-host.cjs 失效。选项：a) config 显式覆盖 kernelEntry/selfHostEntry；b) 改依赖形态
-   （@napuketto/* 移 dependencies + tsdown external）；c) 打包 self-host 资源进产物。
-   生产发布前必须解决。
+3. **发布形态（⚠️ 方案 a 已落地）**：config 显式覆盖 kernelEntry/selfHostEntry 联调有效；
+   生产发布还需：b) 改依赖形态（@napuketto/* 移 dependencies + tsdown external）；
+   c) 打包 self-host 资源进产物。生产发布前决定取舍。
 4. **多账号**：koishi bots 配置天然支持（每 bot 一个子进程，driver 事件闭包绑定 uin）——
    联调验证即可。
 5. **changesets + koishi 市场**：确认 create-napukettoqq 的 CLI_VERSION 同步。
@@ -147,7 +162,11 @@ koishi 插件（本包）                    Napuketto 子进程（self-host.cjs
   （bot.ts 顶部 CHANNEL_TYPE/BOT_STATUS 常量）。
 - actions/elements.ts 的 text 元素取值：`attrs.content` 优先（koishi h text 内容在 attrs.content，
   napcat 实证），children 兜底；br → '\n'。
-- 联调命令参考：koishi 启动后观察子进程 stdout（IPC 行）与 bot 状态（控制台）。
+- **联调命令**：
+  - 裸 IPC 链路：`node scripts/e2e/ipc-probe.mjs 3567141148`（主仓库根）
+  - koishi：`cd C:\Dev\QQBot-Dev\koishi-dev && yarn dev`（NODE_ENV=development）
+  - 子进程日志：`C:\Dev\QQBot-Dev\koishi-dev\data\napuketto\...\logs`（或 bot 配置 dataDir）
+  - koishi 控制台：http://localhost:5140（auth 密码 123456，koishi.yml）
 
 ## 6. 后续轮次（实现顺序 §6）
 
@@ -170,6 +189,19 @@ koishi 插件（本包）                    Napuketto 子进程（self-host.cjs
 6. **biome JSON 行尾不可见字符**：已知无害，看到即跳过，别浪费 token。
 7. **终端 PWD 卡子仓库**：`pnpm -C <绝对路径> check` / `git -C <绝对路径>` 强制主仓库根执行。
 8. **loader 不自研 kernel 依赖**：错误码用宽松结构判断（`(err as {code?}).code`），不 import @napuketto/kernel。
+9. **Context 泛型逆变（TS2344，6867d70 修复）**：`import { Context } from "koishi"` 是独立
+   interface（含 `[minato.Types]`），exactOptionalPropertyTypes 下不满足 satorijs `Bot` 约束。
+   **用 `@satorijs/core` 的 Context**（Bot 约束正主，devDeps 4.6.0 与 koishi 同实例）。
+   VS Code 旧 TS 5.x 语言服务报错，**TS7 原生语言服务（useTsgo）不报**。
+10. **原生 getGroupList 返回值无数据**（主仓库 e27fb55）：返回仅 `{ result, errMsg }`，
+    列表经 `onGroupListUpdate` 事件推送 → **从 GroupCache.listGroups() 读**（事件维护缓存）；
+    force/no_cache 仅触发原生刷新（listGroupsRefreshed）。
+11. **koishi development 条件不生效**：koishi loader 用 `require()` 加载插件，走
+    `exports.default`（lib/index.cjs）**不走 development 条件** → 开发态也需 build 子仓库，
+    或 bot 配置显式覆盖 kernelEntry/selfHostEntry（方案 a，联调实测有效）。
+12. **koishi bots 配置格式**：单 bot 时 bots 直接是 bot 配置对象（非数组套 selfId）——
+    `bots: { 'napuketto:3567141148': { selfId: '3567141148', ... } }` 与
+    `bots: { napuketto: { selfId: ... } }` 均可，缺 selfId 会报错。
 
 ## 8. 环境与验证命令
 
@@ -188,5 +220,5 @@ pnpm -C c:\Dev\QQBot-Dev\NapukettoQQ check
 
 ---
 
-*交接完毕。下一会话从「§5 收尾」开始：端到端联调（koishi 加载插件 → 子进程 IPC → 收发消息）
-优先，再处理发布形态。*
+*交接完毕（2026-08-08 深夜二稿）。下一会话从「§5 端到端联调收尾」开始：确认 koishi 控制台
+收到消息 + 能回复（dispatch 链路排查优先），再处理 QR 展示 / 发布形态 / changesets。*
