@@ -37,6 +37,7 @@ koishi 插件（本包）                    Napuketto 子进程（self-host.cjs
 | 6.5 | 类型修复 + selfHostEntry（收尾启动） | ✅ | 6867d70 + ff0e369 | Context 泛型逆变修复 + 发布形态方案 a（config 覆盖入口） |
 | 6.8 | dispatch 链路三 bug 修复 + 构建修复 | ✅ | 三稿 | **数据库无记录的根因**（content 覆盖 elements / img 元素 / isDirect），见 §5 |
 | 6.9 | fallow 静态分析优化（2026-08-09） | ✅ | 四稿 | 死代码 51→0、重复 63→0 行、MI 91.2→92.1，见 §5.1 |
+| 6.9.5 | **控制台扫码登录面板**（2026-08-09） | ✅ | 63f7234 | DataService 推送登录状态/二维码 + plugin-details slot + relogin 指令，见 §5.2 |
 | 7 | 收尾（多账号/文档/发布） | ⏳ **下一步** | — | 端到端联调（进行中）+ changesets + koishi 市场 |
 
 **子仓库 HEAD = 四稿提交**；主仓库 HEAD 待更新（含 koishi submodule 指针）。
@@ -214,14 +215,46 @@ CRAP 高因未测试（bot/message.ts import koishi 不进单测），端到端�
 构建通过（lib/index.cjs 283KB + index.d.cts 19KB）。产物保留 koishi 生态 import 引用
 （消费端由 koishi 提供类型，符合 peer 单实例）。
 
+### 控制台扫码登录面板（2026-08-09，63f7234）
+
+实现 HANDOVER 待办 #2「QR 登录展示」：**koishi 特有的扫码登录**——插件详情页内嵌
+登录面板（机制参考 koishi-plugin-adapter-bilibili-dm，MIT，仅借鉴骨架，实现自研）。
+
+- **后端** `src/console/`：`NapukettoLoginProvider extends DataService<LoginPanelPayload>`
+  （`@koishijs/plugin-console`），serviceId = `napuketto-login-<uin>` 下行状态；
+  `relogin` console 事件上行 → bot 发 IPC `control restart`（重启子进程重新登录，
+  loader 零改动）。纯函数 `toLoginPanelPayload`（含 4 单测）。
+- **装配**：bot.ts 构造 `ctx.inject(['console'])`（satorijs Context cast koishi Context）
+  → provider + `addEntry`（模块级去重，多 bot 只注册一次；默认导出 Bot 平台注册不变）。
+- **前端** `client/`：`settings.vue`（`<script setup>`，plugin-details slot）状态机渲染
+  （idle/waiting_scan 二维码/scanned/logged_in/failed）+ 重新登录按钮 + 3 分钟过期
+  展示计时（真正过期由 kernel 自动刷新推新码）。
+- **构建** `scripts/build-client.mjs`：等价 `@koishijs/client` yakumo client 构建
+  （vite lib es + external + 手动写 index.js）。**坑**：IIFE + external 产物为空壳
+  （需 globals），必须用 lib es 格式；`<script lang="ts">` 写顶层组合式不编译
+  （要用 `<script setup>`）。
+- **依赖**：`@koishijs/plugin-console` + `@koishijs/client` 进 **dependencies**
+  （模板同款：自动安装 + koishi 自动加载；避免未装 console 时 import 崩溃）；
+  vite 升 **^6**（vitest 4 要求，`./module-runner` 是 vite 6 导出）。
+- **⚠️ TS7 native（tsgo）**：`declare module` + `export *`（@koishijs/console）的
+  namespace 合并**不生效**——`super`/`addListener` 调用点 cast（`as keyof Console.Services`
+  / `as keyof Events`），声明保留（旧 TS 有效，注释已说明）。
+- **pnpm 11 预检坑**（主仓库 `pnpm-workspace.yaml` `settings.verifyDepsBeforeRun:
+  false`）：每次 pnpm 命令自动 reinstall（prepare 构建与手动行为不一致 → exit 1），
+  submodule 场景触发失败；已关闭，按需手动 install。
+- **遗留**：重新登录 = 重启子进程（快速登录优先、QR 兜底），强制扫码（跳过快速
+  登录）需 kernel/loader 支持（清票据/禁快速登录 env）——后续轮次。
+
 ### 待办
 1. **端到端联调收尾（最高优先）**：确认 koishi 控制台收到 QQ 消息 + 能回复。重点排查
    dispatch 链路（events/bridge → bot.dispatch → koishi 会话）。
-2. **QR 登录展示**：`login.onQr`（pngBase64）→ koishi 控制台 <img>（LoginView 已定义，
-   bot.ts 尚未接 console）。
+2. **QR 登录展示**：✅ **已实现（2026-08-09，63f7234）**——`login.onQr`（pngBase64）→
+   koishi 控制台登录面板（DataService 推送 + settings.vue），见 §5.2；剩端到端联调
+   验证面板实际展示。
 3. **发布形态（⚠️ 方案 a 已落地）**：config 显式覆盖 kernelEntry/selfHostEntry 联调有效；
    生产发布还需：b) 改依赖形态（@napuketto/* 移 dependencies + tsdown external）；
-   c) 打包 self-host 资源进产物。生产发布前决定取舍。
+   c) 打包 self-host 资源进产物；d) **打包 client → dist 并验证 prod 入口**（
+   `pnpm build:client` 已可用）。生产发布前决定取舍。
 4. **多账号**：koishi bots 配置天然支持（每 bot 一个子进程，driver 事件闭包绑定 uin）——
    联调验证即可。
 5. **changesets + koishi 市场**：确认 create-napukettoqq 的 CLI_VERSION 同步。
