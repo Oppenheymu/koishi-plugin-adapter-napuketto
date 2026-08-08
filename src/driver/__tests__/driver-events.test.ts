@@ -2,7 +2,7 @@
  * driver-events.test.ts：NapukettoDriver 事件转发单测（login/qr/event/log）。
  */
 import { describe, expect, it, vi } from "vitest";
-import { encodeIpcMessage, IPC_VERSION } from "../ipc/index.js";
+import { encodeIpcMessage, IPC_VERSION } from "../../ipc/index.js";
 import { createHarness } from "./test-utils.js";
 
 describe("NapukettoDriver 事件转发", () => {

@@ -2,8 +2,8 @@
  * bridge.test.ts：事件桥单测（kernel 事件 → dispatch）。
  */
 import { describe, expect, it, vi } from "vitest";
-import type { IpcEventPayload } from "../ipc/index.js";
-import { NapukettoEventBridge } from "./bridge.js";
+import type { IpcEventPayload } from "../../ipc/index.js";
+import { NapukettoEventBridge } from "../bridge.js";
 import { mockH } from "./test-utils.js";
 
 /** 构造 Msg/onRecvMsg 事件 payload（消息数组或单条——bridge 兼容两者）。 */

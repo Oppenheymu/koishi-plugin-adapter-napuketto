@@ -4,7 +4,7 @@
  * koishi 主包 import 会初始化 loader（vitest 环境崩溃），因此测试用 mock h：
  * 产出 { type, attrs, children, toString } 形状，验证元素映射正确。
  */
-import type { HFn } from "./elements.js";
+import type { HFn } from "../elements.js";
 
 /** 内存 h() 工厂（koishi h 的宽松替代）。 */
 export function mockH(): HFn {

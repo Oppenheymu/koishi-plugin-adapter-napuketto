@@ -4,9 +4,9 @@
  * 用 FakeChild + MemoryLinePair 注入（test-utils.ts），不依赖真实子进程。
  */
 import { describe, expect, it, vi } from "vitest";
-import type { IpcMessage } from "../ipc/index.js";
-import { MemoryLinePair } from "../ipc/test-utils.js";
-import { NapukettoDriver } from "./driver.js";
+import type { IpcMessage } from "../../ipc/index.js";
+import { MemoryLinePair } from "../../ipc/test-utils.js";
+import { NapukettoDriver } from "../driver.js";
 import { createHarness, flush } from "./test-utils.js";
 
 describe("NapukettoDriver 启动", () => {

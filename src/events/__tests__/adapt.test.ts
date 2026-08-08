@@ -4,7 +4,7 @@
 
 import type { RawMessage } from "@napuketto/kernel";
 import { describe, expect, it } from "vitest";
-import { adaptRawMessage } from "./adapt.js";
+import { adaptRawMessage } from "../adapt.js";
 import { mockH } from "./test-utils.js";
 
 /** 默认适配选项（mock h）。 */
