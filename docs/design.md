@@ -99,7 +99,13 @@ apps/koishi-plugin-adapter-napuketto/
 │   │   ├── types.ts          #   LoginObserver / LoginView / LoginSnapshot
 │   │   ├── machine.ts        #   NapukettoLoginState：状态机 + QR 缓冲
 │   │   └── machine.test.ts   #   单测（8 用例：QR 全流程/快速直通/缓冲/重置）
-│   ├── events.ts             # 事件翻译：kernel 事件模型 → koishi session 事件
+│   ├── events/               # 事件桥（§5.9，已实现 2026-08-08，地基验证点）
+│   │   ├── index.ts          #   出口（barrel）
+│   │   ├── types.ts          #   EventBridgeOptions / NapukettoSessionFields
+│   │   ├── elements.ts       #   canonical → koishi h()（依赖注入，可单测）
+│   │   ├── adapt.ts          #   RawMessage → session 字段（群聊/私聊/临时会话）
+│   │   ├── bridge.ts         #   NapukettoEventBridge：kernel 事件 → dispatch
+│   │   └── *.test.ts         #   单测（17 用例，mock h 注入不依赖 koishi 运行时）
 │   ├── actions.ts            # 动作调用：koishi 动作 → kernel API（经 IPC）
 │   └── config.ts             # Config schema（koishi Schema）
 ├── docs/
@@ -324,6 +330,63 @@ UI 渲染（console 组件）留给 §6.5 Bot 集成后。
 
 **错误**：`failed` 时经 `view.onStateChange` 通知 + 记录最近错误（`lastError`），
 apply() 层可查（driver 已按重启策略兜底）。
+
+### 5.9 事件桥细节（`events.ts`，实现顺序第 4 步，**地基验证点**）
+
+**定位**：driver 已把 kernel 事件 `{ service, name, args }` 透出（onEvent）——事件桥做
+**kernel 事件 → koishi session** 翻译并 `bot.dispatch(session)`。**验证点：koishi 里能
+收到 QQ 消息。**
+
+**形态**：`src/events/` 目录（单文件 ≤300 行约束）：
+
+| 文件 | 职责 |
+|---|---|
+| `types.ts` | `NapukettoSession`（宽松 Session 构造面）+ EventBridgeOptions / 回调 |
+| `elements.ts` | canonical 元素 → koishi `h()` 元素（纯函数，可单测） |
+| `adapt.ts` | kernel `RawMessage` → koishi session 字段（纯函数，可单测） |
+| `bridge.ts` | `NapukettoEventBridge`：订阅 driver onEvent → 翻译 → dispatch |
+| `index.ts` | barrel |
+
+**会话标识映射**（napcat/onebot 同构骨架，§9.1）：
+
+| 场景 | session.type | userId | channelId | guildId | isDirect |
+|---|---|---|---|---|---|
+| 群聊（chatType=2） | `message.group` | senderUin | groupCode | groupCode | false |
+| 私聊（chatType=1） | `message.private` | senderUin | `private:` + senderUin | — | true |
+| 临时会话（chatType=100） | `message.private` | senderUin | `private:` + senderUin | groupCode | true |
+
+- `senderUin`（RawMessage 直接带，无需 uid→uin 查询——群聊/私聊的发送者 QQ 号）
+- `peerUin`（RawMessage 直接带：群号 / 对端 QQ 号）→ channelId/guildId
+- **selfId**：登录账号 uin（onReady 时从 login 快照取，随事件桥初始化）
+
+**元素映射**（canonical → koishi `h()`）：
+
+| canonical | koishi |
+|---|---|
+| `{ type: "text", text }` | `h.text(text)` |
+| `{ type: "at", target }` | `h.at(target)`（target 为 "all" → `h.at("all")`） |
+| `{ type: "image", url?/path }` | `h.image(url ?? path)` |
+| `{ type: "face", id }` | `h("face", { id })`（emoji 元素，QQ 表情码） |
+| `{ type: "voice", url?/path }` | `h.audio(url ?? path)` |
+| `{ type: "reply", messageId }` | `h.quote(messageId)`（引用） |
+| 其他（video/file/forward/json/xml/unknown） | 降级 `h.text("[type]")` 占位（后续扩充） |
+
+**桥装配**（apply() 层）：
+
+```ts
+const bridge = new NapukettoEventBridge({
+    driverEvents: { onEvent: (payload) => bridge.handle(payload) }, // driver 事件源
+    dispatch: (session) => bot.dispatch(session),                  // koishi Bot.dispatch
+    selfId: () => login.snapshot.self?.uin ?? config.selfId ?? "",
+});
+```
+
+**翻译链路**：`payload.args[0]`（RawMessage）→ `adaptRawMessage` → `adaptElements` →
+`session.type/elements/content` 填充 → dispatch。`Msg/onRecvMsg` 的 args 是**消息数组**
+（运行时实证，§5.3 注）→ 遍历逐条翻译。
+
+**本轮不做**：群通知（GroupBridge）/ 请求类 → notice/request 系列（§6.6 后续）；
+消息记录（`message-deleted` 等）——先打通 message 事件（验证点）。
 
 ## 6. 实现顺序（一个模块一个模块，每步跑 `pnpm check`）
 
