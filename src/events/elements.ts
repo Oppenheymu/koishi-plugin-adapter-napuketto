@@ -2,13 +2,18 @@
  * elements.ts：canonical 元素 → koishi 元素（纯函数，design.md §5.9）。
  *
  * 元素映射（canonical → koishi）：
- *  - text → h.text
+ *  - text → h("text", { content })
  *  - at → h.at（target "all" 原样）
  *  - image → h("img", ...)（koishi 标准元素是 img，onebot 实证；url 优先，path 兜底）
  *  - face → h("face", { id })
  *  - voice → h.audio（url 优先，path 兜底）
  *  - reply → h.quote
- *  - 其他 → h.text("[type]") 占位
+ *  - 其他 → h("text", { content: "[type]" }) 占位
+ *
+ * ⚠️ text 元素必须 attrs.content（2026-08-09 修复）：satorijs Element.toString
+ * 对 `type==="text" && "content" in attrs` 返回纯文本；content 放 children 会
+ * 渲染 `<text>...</text>` 标签，content getter（elements.join）返回 XML → koishi
+ * 指令系统无法提取纯文本。
  *
  * h 依赖注入：生产环境 apply() 传 koishi 的 `h`；单测传内存 mock
  * （koishi 主包 import 会初始化 loader，单测环境崩溃）。
@@ -31,7 +36,12 @@ export function toKoishiElements(elements: CanonicalElement[], h: HFn): unknown[
 function toKoishiElement(element: CanonicalElement, h: HFn): unknown {
     switch (element.type) {
         case "text":
-            return h("text", {}, element.text);
+            // ⚠️ 标准 text 元素 = h("text", { content })（satorijs element 实证，
+            // 2026-08-09 修复）：attrs 必须带 content，toString 才返回纯文本；
+            // 之前 h("text", {}, text)（content 在 children）toString 走通用分支
+            // 渲染成 `<text>echo 1</text>`，content getter（elements.join）返回
+            // XML 标签 → koishi 指令系统提取不到纯文本，指令无响应。
+            return h("text", { content: element.text });
         case "at":
             return h("at", { id: element.target });
         case "image":
@@ -45,6 +55,6 @@ function toKoishiElement(element: CanonicalElement, h: HFn): unknown {
             return h("quote", { id: element.messageId });
         default:
             // video/file/forward/json/xml/unknown：占位（后续扩充）
-            return h("text", {}, `[${element.type}]`);
+            return h("text", { content: `[${element.type}]` });
     }
 }

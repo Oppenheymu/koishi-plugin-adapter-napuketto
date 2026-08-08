@@ -10,9 +10,12 @@ import { mockH } from "../test-utils.js";
 describe("toKoishiElements", () => {
     const h = mockH();
 
-    it("text → h.text", () => {
+    it("text → h('text', { content })（toString 纯文本，非 <text> 标签）", () => {
         const elements = toKoishiElements([{ type: "text", text: "你好" }], h);
-        expect(String(elements[0])).toContain("你好");
+        const element = elements[0] as { attrs?: Record<string, unknown> };
+        expect(element.attrs?.["content"]).toBe("你好");
+        expect(String(elements[0])).toBe("你好");
+        expect(String(elements[0])).not.toContain("<text");
     });
 
     it("at → h.at（target 原样，all 原样）", () => {
@@ -54,12 +57,12 @@ describe("toKoishiElements", () => {
         expect(String(reply[0])).toContain("12345");
     });
 
-    it("未知元素 → h.text('[type]') 占位", () => {
+    it("未知元素 → h('text', { content: '[type]' }) 占位", () => {
         const unknown = toKoishiElements([{ type: "unknown", raw: {} } as CanonicalElement], h);
-        expect(String(unknown[0])).toContain("[unknown]");
+        expect(String(unknown[0])).toBe("[unknown]");
     });
 
-    it("混合元素顺序保留", () => {
+    it("混合元素顺序保留（text 纯文本 + at 标签）", () => {
         const elements = toKoishiElements(
             [
                 { type: "text", text: "早上好" },
@@ -69,9 +72,11 @@ describe("toKoishiElements", () => {
             h,
         );
         const joined = elements.map(String).join("");
-        // 顺序保留：text → at → text
+        // 顺序保留：text（纯文本）→ at → text（纯文本）
         const atIndex = joined.indexOf('<at id="u_1"');
         expect(atIndex).toBeGreaterThan(0);
-        expect(atIndex).toBeLessThan(joined.indexOf("<text>！</text>"));
+        expect(joined.startsWith("早上好")).toBe(true);
+        expect(joined.endsWith("！")).toBe(true);
+        expect(joined).not.toContain("<text>");
     });
 });
