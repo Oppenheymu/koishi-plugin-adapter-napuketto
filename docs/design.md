@@ -81,7 +81,14 @@ apps/koishi-plugin-adapter-napuketto/
 │   ├── index.ts              # 插件入口：name / usage / Config / apply
 │   ├── bot.ts                # NapukettoBot：koishi Bot 子类（平台注册、message 发送）
 │   ├── driver.ts             # NapukettoDriver：子进程 spawn / IPC / 重启 / 健康检查
-│   ├── ipc.ts                # IPC 协议：消息格式、序列化、心跳、请求-响应匹配
+│   ├── ipc/                  # IPC 协议层（§5.6，已实现 2026-08-08）
+│   │   ├── index.ts          #   出口（barrel）
+│   │   ├── types.ts          #   消息类型联合 + payload 类型（协议契约，loader 侧复用）
+│   │   ├── codec.ts          #   JSON 行编解码（encode/decode）
+│   │   ├── errors.ts         #   IpcError（协议级错误：TIMEOUT / CLOSED / 远端错误码）
+│   │   ├── transport.ts      #   IpcLineTransport + ChildProcessIpcTransport
+│   │   ├── client.ts         #   NapukettoIpcClient（请求-响应 + 心跳 + 事件分发）
+│   │   └── index.test.ts     #   单测（内存双端注入，不依赖真实子进程）
 │   ├── events.ts             # 事件翻译：kernel 事件模型 → koishi session 事件
 │   ├── actions.ts            # 动作调用：koishi 动作 → kernel API（经 IPC）
 │   ├── login.ts              # 登录交互：快速登录 / QR 码展示（koishi 控制台）
@@ -162,6 +169,56 @@ koishi Bot 动作 → IPC 请求 → 子进程内 kernel API：
 - **QR 登录**：kernel 支持 `qrCodePath` 落盘二维码图片；插件读图路径 → koishi 控制台
   展示（koishi 的 `ctx.console` 或消息形式），扫码成功状态实时推送
 - 登录状态机：`idle → booting → logging → ready / failed`，插件可查询/重连
+
+### 5.6 IPC 协议层细节（`ipc.ts`，实现顺序第 1 步）
+
+**传输**：JSON 行协议，走子进程 stdin/stdout（`spawn('node', [self-host.cjs], { stdio: ['pipe','pipe','pipe'] })`）：
+
+| 流 | 方向 | 用途 |
+|---|---|---|
+| stdout | 子进程 → 插件 | IPC 消息流（readline 按行解析） |
+| stdin | 插件 → 子进程 | IPC 消息流 |
+| stderr | 子进程 → 插件 | 日志兜底（崩溃堆栈等原始输出） |
+
+每行一条 JSON 消息，`\n` 结尾；`encodeIpcMessage` / `decodeIpcMessage` 保证不丢行。
+**消息信封**：`{ v: 1, type, id?, payload }`——`v` 协议版本（解码校验）、`type` 判别字段、
+`id` 请求 id（仅 action/result）、`payload` 消息体。
+
+**消息清单**（type 判别联合，`IpcMessage`）：
+
+| type | 方向 | payload | 说明 |
+|---|---|---|---|
+| `status` | 子→父 | `{ phase, message?, error? }` | 引导阶段：booting/dlopening/logging/sessioning/ready/failed |
+| `login` | 子→父 | `{ state, selfInfo? }` | 登录状态（kernel `LoginState`）+ selfInfo |
+| `qr` | 子→父 | `{ pngBase64, qrcodeUrl }` | 二维码（kernel `QrCodeData`，koishi 控制台展示用） |
+| `event` | 子→父 | `{ service, name, args }` | kernel 事件（NTEventChannel 形状，翻译层消费） |
+| `result` | 子→父 | `{ ok, value? } \| { ok, error }` | 动作响应（error 携带 kernel 错误码/消息） |
+| `log` | 子→父 | `{ level, message }` | 结构化日志转发（pino level） |
+| `ping` | 双向 | — | 心跳 |
+| `pong` | 双向 | — | 心跳应答 |
+| `action` | 父→子 | `{ action, params? }` | 动作请求（koishi → kernel API） |
+| `control` | 父→子 | `{ command, ... }` | 控制指令：stop / restart / login（`{ uin?, qr? }`） |
+
+**请求-响应匹配**（`NapukettoIpcClient.request`）：
+- 单调递增 `nextId`；下行 `{ type: "action", id, payload }`
+- 内部 pending Map：`id → { resolve, reject, timer }`；`result` 按 `id` 匹配
+- 超时（默认 60s，可配）reject `IpcError("TIMEOUT")` 并清理；迟到 result 忽略
+- result.error 反序列化为 `IpcError(code, message)`（协议边界错误码是宽松 string，
+  不伪造 `KernelErrorCode`；插件侧按需映射 koishi 错误）
+
+**心跳**：子进程每 15s 发 `ping`（self-host 改造时实现，§7）；插件收到自动回 `pong`，
+并记录 `lastPingAt`/`lastSeenAt`（epoch ms）。driver 用 `lastSeenAt` 超时（默认 45s）判定失联
+→ 重启（指数退避，§6.2）。插件也可主动 `sendPing()` 探活（观察 `lastPongAt` 是否前进）。
+
+**通道抽象**（可独立单测，`src/ipc.test.ts` 用内存双端）：
+- `IpcLineTransport`：`write(line)` / `onLine(cb)` / `onClose(cb)` / `close()`
+- `ChildProcessIpcTransport`：包装 ChildProcess（stdout readline 收行 + stdin 发行）
+- `MemoryLinePair`：测试用内存双端（left/right 互写）
+- `NapukettoIpcClient`：传输 + 编解码 + 请求-响应 + 心跳 + 事件分发
+  （`on(type, handler)`，泛型收窄到具体消息类型）
+
+**健壮性**：解码失败（非法行/未知 type/v 不匹配）记日志跳过，不崩通道；`close()` 时
+pending 全部 reject（`KernelError("CLOSED")`）。
 
 ## 6. 实现顺序（一个模块一个模块，每步跑 `pnpm check`）
 

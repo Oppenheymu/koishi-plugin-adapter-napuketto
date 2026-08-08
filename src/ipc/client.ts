@@ -1,0 +1,216 @@
+/**
+ * client.ts：IPC 客户端（插件侧）。
+ *
+ * 职责（design.md §5.6）：
+ *  - 传输 + 编解码接线
+ *  - 请求-响应匹配（单调递增 id + pending Map + 超时清理）
+ *  - 心跳（子进程发 ping → 自动回 pong，记录 lastPingAt/lastPongAt/lastSeenAt）
+ *  - 事件分发（on(type, handler)，泛型收窄到具体消息类型）
+ */
+
+import { decodeIpcMessage, encodeIpcMessage } from "./codec.js";
+import { IpcError } from "./errors.js";
+import type { IpcLineTransport } from "./transport.js";
+import {
+    IPC_VERSION,
+    type IpcActionMessage,
+    type IpcControlPayload,
+    type IpcMessage,
+    type IpcResultMessage,
+} from "./types.js";
+
+/** 动作请求默认超时（毫秒）。 */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
+
+/** pending 请求条目。 */
+interface PendingRequest {
+    action: string;
+    resolve: (value: unknown) => void;
+    reject: (error: unknown) => void;
+    timer: NodeJS.Timeout;
+}
+
+/** 客户端选项。 */
+export interface IpcClientOptions {
+    /** 动作请求超时（毫秒，默认 60s）。 */
+    requestTimeoutMs?: number;
+}
+
+/** 心跳采样：子进程发 ping → 自动回 pong。 */
+export class NapukettoIpcClient {
+    private readonly handlers = new Map<IpcMessage["type"], Set<(message: unknown) => void>>();
+    private readonly pending = new Map<number, PendingRequest>();
+    private nextId = 1;
+    private lastPingAt = 0;
+    private lastPongAt = 0;
+    private lastSeenAt = 0;
+    private closed = false;
+
+    constructor(
+        private readonly transport: IpcLineTransport,
+        private readonly options: IpcClientOptions = {},
+    ) {
+        this.transport.onLine((line) => {
+            this.handleLine(line);
+        });
+        this.transport.onClose(() => {
+            this.handleClose();
+        });
+    }
+
+    /** 最近收到子进程心跳（ping）的时间戳（epoch ms），0 = 从未收到。 */
+    get pingAt(): number {
+        return this.lastPingAt;
+    }
+
+    /** 最近收到子进程 pong 应答的时间戳（epoch ms），0 = 从未收到。 */
+    get pongAt(): number {
+        return this.lastPongAt;
+    }
+
+    /** 最近收到子进程任何消息的时间戳（epoch ms），0 = 从未收到。 */
+    get seenAt(): number {
+        return this.lastSeenAt;
+    }
+
+    /** 通道是否打开。 */
+    get alive(): boolean {
+        return !this.closed;
+    }
+
+    /**
+     * 订阅指定类型的消息。泛型收窄到具体消息类型
+     * （如 `on("event", (msg) => ...)` 中 msg 是 IpcEventMessage）。返回退订函数。
+     */
+    on<T extends IpcMessage["type"]>(
+        type: T,
+        handler: (message: Extract<IpcMessage, { type: T }>) => void,
+    ): () => void {
+        const wrapped = (message: unknown): void => {
+            handler(message as Extract<IpcMessage, { type: T }>);
+        };
+        const set = this.handlers.get(type) ?? new Set<(message: unknown) => void>();
+        set.add(wrapped);
+        this.handlers.set(type, set);
+        return () => {
+            set.delete(wrapped);
+        };
+    }
+
+    /**
+     * 发送动作请求（koishi → kernel API，经子进程转发），等待 result 响应。
+     * 超时 reject IpcError("TIMEOUT")；通道关闭 reject IpcError("CLOSED")。
+     */
+    request(
+        action: string,
+        params?: Record<string, unknown>,
+        timeoutMs?: number,
+    ): Promise<unknown> {
+        if (this.closed) {
+            return Promise.reject(new IpcError("IPC 通道已关闭", "CLOSED"));
+        }
+        const id = this.nextId++;
+        const timeout = timeoutMs ?? this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+        return new Promise<unknown>((resolve, reject) => {
+            const timer = setTimeout(() => {
+                this.pending.delete(id);
+                reject(new IpcError(`动作超时（${timeout}ms）: ${action}`, "TIMEOUT"));
+            }, timeout);
+            this.pending.set(id, { action, resolve, reject, timer });
+            const payload: IpcActionMessage["payload"] =
+                params === undefined ? { action } : { action, params };
+            this.send({ v: IPC_VERSION, type: "action", id, payload });
+        });
+    }
+
+    /** 主动发送心跳（driver 探活用；子进程应回 pong 更新 pongAt）。 */
+    sendPing(): void {
+        this.send({ v: IPC_VERSION, type: "ping" });
+    }
+
+    /** 发送控制指令（stop / restart / login）。 */
+    sendControl(payload: IpcControlPayload): void {
+        this.send({ v: IPC_VERSION, type: "control", payload });
+    }
+
+    /** 主动关闭通道（幂等）：pending 全部 reject，通知传输关闭。 */
+    close(): void {
+        if (this.closed) {
+            return;
+        }
+        this.closed = true;
+        this.rejectAllPending();
+        this.transport.close();
+    }
+
+    private send(message: IpcMessage): void {
+        if (this.closed) {
+            return;
+        }
+        this.transport.write(encodeIpcMessage(message));
+    }
+
+    private handleLine(line: string): void {
+        const message = decodeIpcMessage(line);
+        if (message === null) {
+            return; // 非法行：忽略（driver 层可记日志）
+        }
+        this.lastSeenAt = Date.now();
+        switch (message.type) {
+            case "ping":
+                this.lastPingAt = Date.now();
+                this.send({ v: IPC_VERSION, type: "pong" });
+                break;
+            case "pong":
+                this.lastPongAt = Date.now();
+                break;
+            case "result":
+                this.handleResult(message);
+                return; // result 只走 pending 匹配，不派发给事件订阅者
+            default:
+                break;
+        }
+        this.dispatch(message);
+    }
+
+    private handleResult(message: IpcResultMessage): void {
+        const pending = this.pending.get(message.id);
+        if (pending === undefined) {
+            return; // 迟到的响应：忽略
+        }
+        this.pending.delete(message.id);
+        clearTimeout(pending.timer);
+        const payload = message.payload;
+        if (payload.ok) {
+            pending.resolve(payload.value);
+        } else {
+            pending.reject(new IpcError(payload.error.message, payload.error.code));
+        }
+    }
+
+    private handleClose(): void {
+        if (this.closed) {
+            return;
+        }
+        this.closed = true;
+        this.rejectAllPending();
+    }
+
+    private rejectAllPending(): void {
+        for (const pending of this.pending.values()) {
+            clearTimeout(pending.timer);
+            pending.reject(new IpcError("IPC 通道已关闭", "CLOSED"));
+        }
+        this.pending.clear();
+    }
+
+    private dispatch(message: IpcMessage): void {
+        const set = this.handlers.get(message.type);
+        if (set === undefined) {
+            return;
+        }
+        for (const handler of [...set]) {
+            handler(message);
+        }
+    }
+}
