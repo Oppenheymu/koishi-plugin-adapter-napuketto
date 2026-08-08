@@ -1,24 +1,44 @@
 {
-  "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "lib",
-    "target": "es2022",
-    "module": "esnext",
-    "declaration": true,
-    "emitDeclarationOnly": true,
-    "composite": true,
-    "incremental": true,
-    "skipLibCheck": true,
-    "esModuleInterop": true,
-    "moduleResolution": "bundler",
-    "jsx": "react-jsx",
-    "jsxImportSource": "@satorijs/element",
-    "types": [
-      "node",
-      "yml-register/types"
+    "$schema": "https://json.schemastore.org/tsconfig",
+    "compilerOptions": {
+        "target": "ES2025",
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "moduleDetection": "force",
+        "lib": [
+            "ES2025"
+        ],
+        "types": [
+            "node"
+        ],
+        "strict": true,
+        "noImplicitAny": true,
+        "strictNullChecks": true,
+        "strictFunctionTypes": true,
+        "strictBindCallApply": true,
+        "strictPropertyInitialization": true,
+        "noImplicitThis": true,
+        "alwaysStrict": true,
+        "noUncheckedIndexedAccess": true,
+        "noPropertyAccessFromIndexSignature": true,
+        "exactOptionalPropertyTypes": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "noImplicitReturns": true,
+        "noFallthroughCasesInSwitch": true,
+        "noImplicitOverride": true,
+        "allowUnreachableCode": false,
+        "allowUnusedLabels": false,
+        "verbatimModuleSyntax": true,
+        "isolatedModules": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "declaration": true,
+        "declarationMap": true,
+        "noEmit": true
+    },
+    "include": [
+        "src"
     ]
-  },
-  "include": [
-    "src"
-  ]
 }
