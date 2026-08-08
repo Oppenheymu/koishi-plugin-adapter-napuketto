@@ -1,34 +1,62 @@
 {
-  "name": "koishi-plugin-adapter-napuketto",
-  "description": "NapukettoQQ 的 Koishi 适配器：让 Koishi 直接驱动 NapukettoQQ（自研 QQ NT wrapper.node 协议层）",
-  "version": "0.0.1",
-  "type": "module",
-  "main": "lib/index.cjs",
-  "types": "lib/index.d.cts",
-  "files": [
-    "lib"
-  ],
-  "license": "MIT",
-  "keywords": [
-    "chatbot",
-    "koishi",
-    "plugin",
-    "adapter",
-    "qq",
-    "napuketto"
-  ],
-  "scripts": {
-    "dev": "tsdown --watch",
-    "build": "tsdown"
-  },
-  "peerDependencies": {
-    "koishi": "^4.18.7"
-  },
-  "devDependencies": {
-    "@napuketto/adapter": "workspace:*",
-    "@napuketto/kernel": "workspace:*",
-    "@napuketto/loader": "workspace:*",
-    "koishi": "4.18.11",
-    "tsdown": "^0.22.14"
-  }
+    "name": "koishi-plugin-adapter-napuketto",
+    "version": "0.0.1",
+    "contributors": [
+        "Oppenheymu <oppenheymu@gmail.com>"
+    ],
+    "description": "NapukettoQQ 的 Koishi 适配器：让 Koishi 直接驱动 NapukettoQQ（自研 QQ NT wrapper.node 协议层）",
+    "main": "lib/index.cjs",
+    "types": "lib/index.d.cts",
+    "exports": {
+        ".": {
+            "types": "./lib/index.d.cts",
+            "development": "./src/index.ts",
+            "default": "./lib/index.cjs"
+        },
+        "./package.json": "./package.json"
+    },
+    "files": [
+        "lib"
+    ],
+    "license": "MIT",
+    "publishConfig": {
+        "access": "public"
+    },
+    "homepage": "https://github.com/Oppenheymu/koishi-plugin-adapter-napuketto",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/Oppenheymu/koishi-plugin-adapter-napuketto.git"
+    },
+    "keywords": [
+        "chatbot",
+        "koishi",
+        "plugin",
+        "adapter",
+        "qq",
+        "napuketto"
+    ],
+    "scripts": {
+        "dev": "tsdown --watch",
+        "build": "tsdown",
+        "check": "biome check . && tsc --noEmit"
+    },
+    "peerDependencies": {
+        "koishi": "^4.18.7"
+    },
+    "devDependencies": {
+        "@biomejs/biome": "^2.5.6",
+        "@napuketto/adapter": "workspace:*",
+        "@napuketto/kernel": "workspace:*",
+        "@napuketto/loader": "workspace:*",
+        "@types/node": "^26.1.2",
+        "koishi": "4.18.11",
+        "tsdown": "^0.22.14",
+        "typescript": "^7.0.2"
+    },
+    "koishi": {
+        "description": {
+            "en": "NapukettoQQ adapter for Koishi: drive QQ via the self-developed wrapper.node protocol layer",
+            "zh": "NapukettoQQ 适配器：自研 QQ NT wrapper.node 协议层，无需 NapCat"
+        }
+    }
 }
