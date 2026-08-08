@@ -6,11 +6,15 @@
  *  - qqPath / stubDir：loader 引导参数（缺省自动探测/包内默认）
  *  - dataDir：数据根目录（缺省 kernel resolveDataRoot 默认）
  *  - kernelEntry 等：主仓库包入口覆盖（发布/联调用，见 launch.ts 发布形态说明）
+ *  - logLevel：日志等级（默认 debug——多点日志便于排查，用户可调低减少输出）
  *  - restart / heartbeatTimeoutMs：driver 重启策略与心跳超时
  *
  * 运行时 import koishi（Schema）——本文件不进单测（HANDOVER §7 坑 1）。
  */
 import { Schema } from "koishi";
+
+/** 日志等级（reggol Logger level；默认 debug——事件/消息详细日志，可调低减少输出）。 */
+export type LogLevel = "debug" | "info" | "error" | "silent";
 
 /** 重启策略（与 driver RestartPolicy 对齐）。 */
 export interface RestartConfig {
@@ -38,6 +42,8 @@ export interface NapukettoBotConfig {
     selfHostEntry?: string;
     /** 心跳超时（毫秒，driver 默认 45s）。 */
     heartbeatTimeoutMs?: number;
+    /** 日志等级（默认 "debug"：事件桥/消息详细日志；"info" 只留消息与警告，"error" 只报错）。 */
+    logLevel?: LogLevel;
     /** 子进程重启策略。 */
     restart?: RestartConfig;
 }
@@ -59,6 +65,17 @@ export const napukettoConfigSchema: Schema<NapukettoBotConfig> = Schema.object({
     heartbeatTimeoutMs: Schema.number()
         .description("子进程心跳超时（毫秒，默认 45000）")
         .default(45_000),
+    logLevel: Schema.union([
+        Schema.const("debug" as const),
+        Schema.const("info" as const),
+        Schema.const("error" as const),
+        Schema.const("silent" as const),
+    ])
+        .description(
+            "日志等级（默认 debug：子进程/事件/消息详细日志；info 只留消息与警告，" +
+                "error 只报错，silent 关闭）",
+        )
+        .default("debug"),
     restart: Schema.object({
         maxRetries: Schema.number().description("最大重启次数（0 = 不重启，默认 3）").default(3),
         backoffMs: Schema.number().description("首次退避基数（毫秒，默认 1000）").default(1_000),

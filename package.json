@@ -1,11 +1,11 @@
 {
     "name": "koishi-plugin-adapter-napuketto",
     "version": "0.0.2",
+    "description": "NapukettoQQ内嵌到Koishi的适配器：让Koishi直接驱动NapukettoQQ",
     "contributors": [
         "Oppenheymu <oppenheymu@gmail.com>"
     ],
     "type": "module",
-    "description": "NapukettoQQ 的 Koishi 适配器：让 Koishi 直接驱动 NapukettoQQ（自研 QQ NT wrapper.node 协议层）",
     "main": "lib/index.cjs",
     "types": "lib/index.d.cts",
     "exports": {
@@ -48,7 +48,7 @@
         "@biomejs/biome": "^2.5.6",
         "@napuketto/kernel": "workspace:*",
         "@napuketto/loader": "workspace:*",
-        "@satorijs/core": "4.6.0",
+        "@satorijs/core": "^4.6.0",
         "@types/node": "^26.1.2",
         "koishi": "4.18.11",
         "tsdown": "^0.22.14",
@@ -56,6 +56,7 @@
         "vitest": "^4.1.10"
     },
     "koishi": {
+        "category": "adapter",
         "description": {
             "en": "NapukettoQQ adapter for Koishi: drive QQ via the self-developed wrapper.node protocol layer",
             "zh": "NapukettoQQ 适配器：自研 QQ NT wrapper.node 协议层，无需 NapCat"

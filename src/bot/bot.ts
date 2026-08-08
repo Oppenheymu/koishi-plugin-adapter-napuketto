@@ -21,7 +21,7 @@
 import type { Context } from "@satorijs/core";
 import { Bot, h, type MessageEncoder, type Universal } from "koishi";
 import { NapukettoInternal } from "../actions/index.js";
-import { type NapukettoBotConfig, napukettoConfigSchema } from "../config.js";
+import { type LogLevel, type NapukettoBotConfig, napukettoConfigSchema } from "../config.js";
 import { NapukettoDriver } from "../driver/index.js";
 import type { HFn } from "../events/elements.js";
 import { NapukettoEventBridge, type NapukettoSessionFields } from "../events/index.js";
@@ -37,6 +37,14 @@ const PRIVATE_PREFIX = "private:";
 // Channel.Type：TEXT=0 / DIRECT=1；Status：CONNECT=2 / DISCONNECT=3
 const CHANNEL_TYPE = { TEXT: 0, DIRECT: 1 } as const;
 const BOT_STATUS = { CONNECT: 2, DISCONNECT: 3 } as const;
+
+/** logLevel 配置 → reggol 数字（reggol：DEBUG=3 / INFO=2 / ERROR=1 / SILENT=0）。 */
+const LOG_LEVEL_MAP: Record<LogLevel, number> = {
+    debug: 3,
+    info: 2,
+    error: 1,
+    silent: 0,
+};
 
 /** NapukettoQQ 的 koishi Bot（平台 "napuketto"）。
  *
@@ -64,6 +72,9 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
 
     constructor(ctx: Context, config: NapukettoBotConfig) {
         super(ctx, config, "napuketto");
+        // 日志等级（用户可配，默认 debug——多点日志便于排查；reggol setter 按名字
+        // 写全局 Logger.levels，只影响 napuketto 及其子 namespace）
+        this.logger.level = LOG_LEVEL_MAP[config.logLevel ?? "debug"];
         // selfId setter 写 user.id（satorijs defineAccessor），sid 立即可用
         this.selfId = config.selfId;
         this.user ??= {} as Universal.User;
@@ -240,8 +251,9 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
                 },
                 onQr: (qr) => this.login.onQr(qr),
                 onEvent: (payload) => {
-                    // 调试定位（2026-08-09）：事件桥入口，确认 IPC event 是否到达插件
-                    this.logger.info(
+                    // 事件桥入口（debug：Group 等高频事件在 info 下不刷屏；
+                    // 用户配 debug 可见全量事件转发，便于排查）
+                    this.logger.debug(
                         "[napuketto] 收到事件: %s/%s args=%d",
                         payload.service,
                         payload.name,
@@ -322,7 +334,7 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
         if (fields.elements !== undefined) {
             session.elements = fields.elements as h[];
         }
-        // 调试定位（2026-08-09）：dispatch 前打印 session 关键字段
+        // 消息路径关键日志（info，默认可见）：session 字段 + 渲染后文本
         this.logger.info(
             "[napuketto] dispatch: type=%s channel=%s user=%s isDirect=%s msg=%s",
             fields.type,
