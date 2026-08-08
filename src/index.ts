@@ -1,5 +1,5 @@
-import { Context, Schema } from "koishi";
 import { isKernelError, KernelError } from "@napuketto/kernel";
+import { type Context, Schema } from "koishi";
 
 export const name = "adapter-napuketto";
 
@@ -36,4 +36,3 @@ export function apply(ctx: Context, config: Config): void {
         isKernelError(error),
     );
 }
-
