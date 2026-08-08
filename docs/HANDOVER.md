@@ -32,12 +32,12 @@ koishi 插件（本包）                    Napuketto 子进程（self-host.cjs
 | 2 | `src/driver/` 驱动层 | ✅ | 8c16547 | spawn/重启/健康检查，15 单测 |
 | 3 | `src/login/` 登录交互层 | ✅ | 6e1efbf | 状态机/QR 缓冲，8 单测 |
 | 4 | `src/events/` 事件桥 | ✅ | 31f3504 | **地基验证点**，17 单测 |
-| 5 | `src/actions/` 动作桥 | ⏳ **下一步** | — | koishi 动作 → kernel API |
-| 6 | `src/bot.ts` Bot 集成 | ⏳ | — | NapukettoBot 注册 koishi 平台 |
+| 5 | `src/actions/` 动作桥 | ✅ | 801067b | koishi 动作 → IPC action，27 单测 |
+| 6 | `src/bot.ts` Bot 集成 | ⏳ **下一步** | — | NapukettoBot 注册 koishi 平台 |
 | 7 | 收尾（多账号/文档/发布） | ⏳ | — | changesets + koishi 市场 |
 
-**子仓库 HEAD = `31f3504`（事件桥）**，工作区干净；主仓库 HEAD = `1257992`（submodule 指针），
-领先 origin 1 提交（未 push）。**新会话第一件事：把两个仓库 push 到 origin**（或先继续施工再一起推）。
+**子仓库 HEAD = `801067b`（动作桥）**，工作区干净；主仓库 HEAD = `c4d2dff`（submodule 指针），
+领先 origin 3 提交（未 push）。**新会话第一件事：把两个仓库 push 到 origin**（或先继续施工再一起推）。
 
 ## 3. 已实现模块速览（新会话必读）
 
@@ -75,6 +75,20 @@ koishi 插件（本包）                    Napuketto 子进程（self-host.cjs
   运行时实证）→ 逐条 `dispatch(session)`；非消息事件忽略（Group/notice 系列后续）
 - 测试用 `mockH()`（src/events/test-utils.ts）
 
+### 3.5 `src/actions/`（动作桥）
+- `types.ts`：`RequestFn`（传输抽象，`(action, params?) => Promise<unknown>`）/ `NapukettoInternalOptions` / `PeerTarget`
+- `elements.ts`：**koishi 元素 → canonical 反向映射**（与 events/elements.ts 对称）——text/at/image/face/
+  audio→voice/quote→reply；**http(s) URL 的 image/audio 降级 text**（需下载后发送，后续轮次）；
+  未知元素降级 text（toString 保内容）；字符串 content → 单 text
+- `channel.ts`：`parseChannelId(channelId, guildId?)`——群号→chatType=2 / `private:`+uin→chatType=1 /
+  `private:`+uin+guildId→chatType=100（临时会话）
+- `internal.ts`：`NapukettoInternal`——**koishi `bot.internal` 封装**（对应 napcat `internal._request`）：
+  `_request(action, params)` 透传；`sendMessage`（元素反向映射，返回 msgId[]）/ `deleteMessage`→
+  recallMessage / `getMessageList`→fetchMessages（返回 `{ data, next }` koishi MessageList 形状）/ `markAsRead` /
+  `getGroupList` / `getFriendList` / `getSelf`；空内容 → 返回 [] 不发请求
+- 测试：mock request（`vi.fn`）断言动作名 + params，27 单测（elements 12 + channel 4 + internal 11）
+- 载荷经 IPC `client.request` 到 loader 侧动作表（`msg.sendMessage` 等，peerUin 自动转 uid）
+
 ## 4. 主仓库前置（§7 已落地，勿重复）
 
 - **kernel**：`NTEventChannel.onAny`（全事件订阅）+ `CoreLoginOptions.onLoginProgress`
@@ -84,31 +98,32 @@ koishi 插件（本包）                    Napuketto 子进程（self-host.cjs
   `launcher.ts` `LaunchOptions.ipc` 注入 NAPUTO_IPC=1
 - **变化集**（主仓库 9005c43 + changeset `koishi-ipc-prereq.md`，kernel/loader patch）
 
-## 5. 下一步：动作桥 `src/actions/`（实现顺序第 5 步）
+## 5. 下一步：Bot 集成 `src/bot.ts`（实现顺序第 6 步）
 
-### 设计要点（在 design.md §5.10 先补设计）
-- **目标**：koishi Bot 动作 → IPC action 请求 → 子进程 kernel API。打通「koishi 发消息」。
-- **loader 侧动作表已就绪**（主仓库 §7）：`msg.sendMessage/recallMessage/fetchMessages/markRead`
-  + `group.getGroupList` + `friend.getFriendList` + `login.getSelf`；**peerUin 自动转 uid**
-  （注入 groupApi.uinToUid）。动作名点分域：`msg.sendMessage` 等。
-- **插件侧**：`NapukettoInternal`（koishi `bot.internal` 封装）→ `client.request(action, params)`；
-  参考 napcat 的 `internal._request` 传输抽象（design.md §9.1）——把传输换成 IPC 请求即可。
-- **关键映射**：
-  - `sendMessage(channelId, content)` → `msg.sendMessage`：channelId 是群号（group）或
-    `private:` + uin（私聊，事件桥 §5.9 同款）；content 是 koishi 元素 → **反向映射**
-    canonical（新写 `src/actions/elements.ts`，与 events/elements.ts 对称：h.at → at、
-    h.image → image、h.quote → reply、纯文本 → text）
-  - `deleteMessage` → `msg.recallMessage`（msgIds 数组）
-  - `getMessageList` → `msg.fetchMessages`
-  - `markAsRead` → `msg.markRead`
-- **可单测**：纯函数（元素反向映射 + channelId 解析）用 mock h / mock client；client.request
-  用 MemoryLinePair 注入。
+### 设计要点（在 design.md §5.11 先补设计）
+- **目标**：`NapukettoBot extends Bot`（koishi 平台注册）——**端到端验证点：koishi 控制台
+  收到消息 + 能回复**。把 apply() 全面装配起来：driver + login + events + actions + bot。
+- **关键问题（先想清楚再动手）**：
+  1. **koishi 主包 import 边界**：`import { Bot } from "koishi"` 是运行时 import（单测崩溃，
+     HANDOVER §7 坑 1）——bot.ts 是否进单测？进的话需要把 Bot 基类也依赖注入（apply() 层
+     注入 Bot 类构造），只对可单测的纯逻辑（MessageEncoder 元素链路）写测试。
+  2. **`internal` 挂载**：`NapukettoBot.internal = new NapukettoInternal({ request })`——request
+     绑定 `client.request`（重启后 client 会换实例，onReady 时重建）。
+  3. **`MessageEncoder`**：koishi 元素发送链路（`forward()`/`flush()`/`prepare()`），最终调
+     `bot.internal.sendMessage(channelId, elements)`。
+  4. **`initialize()`**：`getLogin()` 拉 selfInfo → `online()`；失败 `offline(error)`。
+  5. **apply() 装配顺序**：spawn driver → onReady 里接 events（bridge）+ actions（internal 重建）
+     → bot 平台注册（`ctx.platform('napuketto', ...)`）。
+- **参考**：design.md §9.1 的 napcat/onebot Bot/MessageEncoder 骨架；`adaptSession` 模式
+  （session 字段我们已由 events/adapt.ts 产出，bot.ts 只做 Bot.dispatch 接线）。
 
 ### 提示
-- `NapukettoIpcClient.request` 已就绪（超时/错误 IpcError），直接复用。
-- 元素反向映射注意 koishi `h.at` 的 attrs 是 `{ id }`（事件桥 §5.9 已确认），image 是 `{ src }`。
-- peer 目标解析：群聊 channelId=群号（chatType=2）、私聊 channelId=`private:`+uin（chatType=1）——
-  用 `client.request("msg.sendMessage", { chatType, peerUin, elements })`，loader 侧自动转 uid。
+- events/adapt.ts 已产 koishi session 字段（type/channelId/guildId/userId/elements/content），
+  Bot 侧只需 `bot.session(event)` → 填字段 → `bot.dispatch(session)`。
+- actions/internal.ts 已就绪（sendMessage/deleteMessage/getMessageList/markAsRead/列表/self），
+  Bot 动作方法默认走 `this.internal.*`，无需重复实现。
+- 多账号：apply 按 config.accounts 遍历 spawn（每账号一子进程），driver 事件回调闭包绑定 uin。
+- config.ts schema 本轮一并做（koishi `Schema.object`，账号列表 + 连接参数）。
 
 ## 6. 后续轮次（实现顺序 §6）
 
@@ -149,4 +164,4 @@ pnpm -C c:\Dev\QQBot-Dev\NapukettoQQ check
 
 ---
 
-*交接完毕。下一会话从「§5 动作桥 src/actions/」开始，先补 design.md §5.10 设计，再实现。*
+*交接完毕。下一会话从「§5 Bot 集成 src/bot.ts」开始，先补 design.md §5.11 设计，再实现。*
