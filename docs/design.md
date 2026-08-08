@@ -80,7 +80,12 @@ apps/koishi-plugin-adapter-napuketto/
 ├── src/
 │   ├── index.ts              # 插件入口：name / usage / Config / apply
 │   ├── bot.ts                # NapukettoBot：koishi Bot 子类（平台注册、message 发送）
-│   ├── driver.ts             # NapukettoDriver：子进程 spawn / IPC / 重启 / 健康检查
+│   ├── driver/               # 驱动层（§5.7，已实现 2026-08-08）
+│   │   ├── index.ts          #   出口（barrel）
+│   │   ├── types.ts          #   DriverOptions/DriverEvents/DriverState/ChildProcessLike
+│   │   ├── backoff.ts        #   指数退避纯函数
+│   │   ├── driver.ts         #   NapukettoDriver：spawn/IPC/重启/健康检查
+│   │   └── *.test.ts         #   单测（FakeChild + MemoryLinePair 注入，15 用例）
 │   ├── ipc/                  # IPC 协议层（§5.6，已实现 2026-08-08）
 │   │   ├── index.ts          #   出口（barrel）
 │   │   ├── types.ts          #   消息类型联合 + payload 类型（协议契约，loader 侧复用）
@@ -219,6 +224,58 @@ koishi Bot 动作 → IPC 请求 → 子进程内 kernel API：
 
 **健壮性**：解码失败（非法行/未知 type/v 不匹配）记日志跳过，不崩通道；`close()` 时
 pending 全部 reject（`KernelError("CLOSED")`）。
+
+### 5.7 驱动层细节（`driver.ts`，实现顺序第 2 步）
+
+**形态**：`src/driver/` 目录（单文件 ≤300 行约束）：
+
+| 文件 | 职责 |
+|---|---|
+| `types.ts` | DriverOptions / DriverEvents / DriverState / ChildProcessLike / DriverLauncher |
+| `backoff.ts` | 指数退避纯函数（attempt → delayMs，可单测） |
+| `driver.ts` | `NapukettoDriver`：spawn / IPC / 重启 / 健康检查 |
+| `index.ts` | barrel |
+
+**依赖注入（可单测，不依赖真实子进程）**：
+
+```ts
+export interface DriverOptions {
+    launch: DriverLauncher;                    // 启动子进程（默认 launchSelfHost 组装，测试注入假 child）
+    createTransport?: (child) => IpcLineTransport; // 默认 ChildProcessIpcTransport，测试注入内存双端
+    events: DriverEvents;                      // 事件回调（status/login/qr/event/log/ready/exit/error）
+    restart?: { maxRetries?: number; backoffMs?: number; backoffFactor?: number };
+    heartbeatTimeoutMs?: number;               // 默认 45s
+}
+export type DriverLauncher = () => { child: ChildProcessLike; cleanup?: () => void };
+```
+
+driver **不直接 import loader**（launch 封装隔离，`launchSelfHost({ ipc: true, stdio: ['pipe','pipe','pipe'] })`
+在 apply() 层组装注入）——只管子进程生命周期，与传输/IPC 解耦。
+
+**状态机**：
+
+```
+idle → spawning → booting（收到 status）→ ready / failed
+         └── 崩溃 / 失联（心跳超时）→ restarting（退避）→ spawning ...
+stop → stopping → stopped（stop 后不再重启）
+```
+
+- status.phase 驱动 booting/ready/failed 迁移；`ready` 时回调 `events.onReady(client)`（上层在
+  onReady 里拿新 client 重新接 events/actions——重启后 client 实例会换）
+- 每次 spawn 建新 transport + 新 `NapukettoIpcClient`（旧 client 随子进程退出 closed）
+
+**心跳健康检查**：
+- 定时器（1s）读 `client.seenAt`；超过 `heartbeatTimeoutMs`（默认 45s）→ 判定失联 → kill + 重启
+- **spawn 后立即监控**（兜 dlopen / 登录卡死挂起——wrapper 原生层卡住不发任何消息）
+
+**重启策略**：
+- `maxRetries` 默认 3（0 = 不重启）；`backoffMs` 默认 1000 × factor 2（1s/2s/4s）
+- 达到上限 → `failed`；`stop()` 后不再重启（stopping 标志）
+
+**stop()**：置 stopping → 发 control stop（优雅退出）→ 等 exit 5s → kill → 清理定时器 + client.close()
+
+**ChildProcessLike**（宽松子进程面，测试可伪造）：`{ stdout, stdin, once('exit'), kill, pid? }`；
+`ChildProcessIpcTransport` 构造时断言收窄。
 
 ## 6. 实现顺序（一个模块一个模块，每步跑 `pnpm check`）
 
