@@ -4,7 +4,8 @@
 > 嵌入 Koishi，让 Koishi 直接驱动 QQ，无需 NapCat、无需独立进程、无 WebUI 依赖。
 > **配套**：主仓库 `docs/architecture.md`（分层/ADR/红线）、`docs/STATUS.md`（现状 + 决策点）、
 > `packages/kernel/docs/design.md`（核心装配）、`packages/loader/docs/design.md`（引导）。
-> 新对话先读主仓库 STATUS → AGENTS.md → architecture.md → 本文件。
+> **新对话先读 `docs/HANDOVER.md`（施工交接，2026-08-08 深夜）** → 主仓库 STATUS → AGENTS.md
+> → architecture.md → 本文件（已实现模块有 ✅ 标注）。
 
 ---
 
