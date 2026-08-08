@@ -54,12 +54,14 @@ describe("NapukettoEventBridge", () => {
         );
         expect(dispatch).toHaveBeenCalledTimes(2);
         expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-            type: "message.group",
+            type: "message",
+            subtype: "group",
             userId: "20001",
             channelId: "10001",
         });
         expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
-            type: "message.private",
+            type: "message",
+            subtype: "private",
             channelId: "private:20001",
         });
     });

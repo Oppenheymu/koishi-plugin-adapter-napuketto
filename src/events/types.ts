@@ -10,6 +10,8 @@ import type { HFn } from "./elements.js";
 /** koishi session 字段（宽松构造面——Bot.session(event) 接受的 Partial<Event>）。 */
 export interface NapukettoSessionFields {
     type: string;
+    /** 消息子类型（onebot 同构：群聊 group / 私聊 private；临时会话归 private）。 */
+    subtype?: string;
     selfId: string;
     platform: string;
     timestamp: number;

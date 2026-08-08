@@ -293,6 +293,8 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
     private dispatchSession(fields: NapukettoSessionFields): void {
         const session = this.session({
             type: fields.type,
+            // exactOptionalPropertyTypes：可选字段条件展开，不显式赋 undefined
+            ...(fields.subtype !== undefined ? { subtype: fields.subtype } : {}),
             selfId: fields.selfId,
             platform: fields.platform,
             timestamp: fields.timestamp,

@@ -40,9 +40,10 @@ function makeMsg(overrides: Partial<RawMessage> = {}): RawMessage {
 }
 
 describe("adaptRawMessage", () => {
-    it("群聊 → message.group + channelId=guildId=群号", () => {
+    it("群聊 → type=message + subtype=group + channelId=guildId=群号", () => {
         const session = adaptRawMessage(makeMsg(), adaptOpts());
-        expect(session.type).toBe("message.group");
+        expect(session.type).toBe("message");
+        expect(session.subtype).toBe("group");
         expect(session.selfId).toBe("10086");
         expect(session.platform).toBe("napuketto");
         expect(session.userId).toBe("20001");
@@ -52,20 +53,22 @@ describe("adaptRawMessage", () => {
         expect(session.isDirect).toBe(false);
     });
 
-    it("私聊 → message.private + channelId=private:+senderUin", () => {
+    it("私聊 → type=message + subtype=private + channelId=private:+senderUin", () => {
         const session = adaptRawMessage(
             makeMsg({ chatType: 1, peerUin: "20001", peerUid: "u_sender" }),
             adaptOpts(),
         );
-        expect(session.type).toBe("message.private");
+        expect(session.type).toBe("message");
+        expect(session.subtype).toBe("private");
         expect(session.channelId).toBe("private:20001");
         expect(session.guildId).toBeUndefined();
         expect(session.isDirect).toBe(true);
     });
 
-    it("临时会话 → message.private + guildId=群号", () => {
+    it("临时会话 → type=message + subtype=private + guildId=群号", () => {
         const session = adaptRawMessage(makeMsg({ chatType: 100, peerUin: "10001" }), adaptOpts());
-        expect(session.type).toBe("message.private");
+        expect(session.type).toBe("message");
+        expect(session.subtype).toBe("private");
         expect(session.channelId).toBe("private:20001");
         expect(session.guildId).toBe("10001");
         expect(session.isDirect).toBe(true);
