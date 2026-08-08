@@ -240,6 +240,13 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
                 },
                 onQr: (qr) => this.login.onQr(qr),
                 onEvent: (payload) => {
+                    // 调试定位（2026-08-09）：事件桥入口，确认 IPC event 是否到达插件
+                    this.logger.info(
+                        "[napuketto] 收到事件: %s/%s args=%d",
+                        payload.service,
+                        payload.name,
+                        payload.args.length,
+                    );
                     this.bridge.handle(payload);
                 },
                 onReady: () => {
@@ -313,6 +320,15 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
         if (fields.elements !== undefined) {
             session.elements = fields.elements as h[];
         }
+        // 调试定位（2026-08-09）：dispatch 前打印 session 关键字段
+        this.logger.info(
+            "[napuketto] dispatch: type=%s channel=%s user=%s isDirect=%s msg=%s",
+            fields.type,
+            fields.channelId ?? "?",
+            fields.userId ?? "?",
+            fields.isDirect,
+            fields.elements?.join("") ?? "",
+        );
         this.dispatch(session);
     }
 }
