@@ -2,8 +2,8 @@
  * codec.test.ts：编解码单测（roundtrip / 非法输入兜底）。
  */
 import { describe, expect, it } from "vitest";
-import { decodeIpcMessage, encodeIpcMessage, type IpcMessage } from "./index.js";
-import { IPC_VERSION } from "./types.js";
+import { decodeIpcMessage, encodeIpcMessage, type IpcMessage } from "../index.js";
+import { IPC_VERSION } from "../types.js";
 
 describe("codec", () => {
     it("encode/decode roundtrip", () => {
