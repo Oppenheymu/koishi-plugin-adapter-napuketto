@@ -94,9 +94,13 @@ apps/koishi-plugin-adapter-napuketto/
 │   │   ├── transport.ts      #   IpcLineTransport + ChildProcessIpcTransport
 │   │   ├── client.ts         #   NapukettoIpcClient（请求-响应 + 心跳 + 事件分发）
 │   │   └── index.test.ts     #   单测（内存双端注入，不依赖真实子进程）
+│   ├── login/                # 登录交互层（§5.8，已实现 2026-08-08）
+│   │   ├── index.ts          #   出口（barrel）
+│   │   ├── types.ts          #   LoginObserver / LoginView / LoginSnapshot
+│   │   ├── machine.ts        #   NapukettoLoginState：状态机 + QR 缓冲
+│   │   └── machine.test.ts   #   单测（8 用例：QR 全流程/快速直通/缓冲/重置）
 │   ├── events.ts             # 事件翻译：kernel 事件模型 → koishi session 事件
 │   ├── actions.ts            # 动作调用：koishi 动作 → kernel API（经 IPC）
-│   ├── login.ts              # 登录交互：快速登录 / QR 码展示（koishi 控制台）
 │   └── config.ts             # Config schema（koishi Schema）
 ├── docs/
 │   └── design.md             # 本文件
@@ -276,6 +280,50 @@ stop → stopping → stopped（stop 后不再重启）
 
 **ChildProcessLike**（宽松子进程面，测试可伪造）：`{ stdout, stdin, once('exit'), kill, pid? }`；
 `ChildProcessIpcTransport` 构造时断言收窄。
+
+### 5.8 登录交互层细节（`login.ts`，实现顺序第 3 步）
+
+**定位**：登录状态在子进程内驱动（self-host bootstrap 登录），插件侧只做**状态观察 +
+QR 展示 + 交互**。driver 的 `onLogin`（kernel LoginState）+ `onQr`（QrCodeData）已透出——
+登录层消费这两个回调。
+
+**形态**：`src/login/` 目录（单文件 ≤300 行约束）：
+
+| 文件 | 职责 |
+|---|---|
+| `types.ts` | `LoginObserver`（driver 回调装配）+ `LoginView`（UI 回调：状态/QR 变化）+ LoginStatus 快照 |
+| `machine.ts` | `NapukettoLoginState`：状态机（观察 driver onLogin/onQr → 迁移 + 通知） |
+| `index.ts` | barrel |
+
+**状态机**（与 kernel `LoginState` 对齐：idle/waiting_scan/scanned/logged_in/failed）：
+
+```
+idle → waiting_scan（收到 QR / polling started）→ scanned（用户已扫码）
+     → logged_in（onQRCodeLoginSucceed，携带 selfInfo）
+     └→ failed（登录失败 / QR 过期）
+```
+
+- **快速登录**（无 QR 阶段）：driver 直接 `onLogin(logged_in)` → logged_in（不经过 waiting_scan）
+- **QR 缓冲**：`onQr` 先于 `onLogin(waiting_scan)` 到达（IPC 乱序）→ 内部暂存最新 QR，
+  迁移到 waiting_scan 时随状态通知一起送出
+- **每次 spawn 重置**：driver 重启（崩溃/失联）→ 新 client → 登录层状态归 idle
+  （driver.onExit 或 onReady 重置）
+
+**登录 UI 视图**（koishi 控制台展示，本轮定义接口，apply() 层接 console）：
+
+```ts
+export interface LoginView {
+    onStateChange?(state: LoginState, self?: SelfInfo): void;  // 状态变化
+    onQrChange?(qr: QrCodeData): void;                          // 二维码更新（刷新/过期重取）
+}
+```
+
+**QR 展示形态**：`qr.pngBase64` → `data:image/png;base64,...` → koishi 控制台 `<img>`；
+`qr.qrcodeUrl` 兜底链接（控制台不可用时发消息）。本轮定义 `LoginObserver` 装配，
+UI 渲染（console 组件）留给 §6.5 Bot 集成后。
+
+**错误**：`failed` 时经 `view.onStateChange` 通知 + 记录最近错误（`lastError`），
+apply() 层可查（driver 已按重启策略兜底）。
 
 ## 6. 实现顺序（一个模块一个模块，每步跑 `pnpm check`）
 
