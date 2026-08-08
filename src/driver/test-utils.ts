@@ -8,10 +8,10 @@ import {
     IPC_VERSION,
     type IpcMessage,
     type IpcStatusPayload,
-} from "../../ipc/index.js";
-import { MemoryLinePair } from "../../ipc/test-utils.js";
-import { NapukettoDriver } from "../driver.js";
-import type { ChildProcessLike, DriverEvents } from "../types.js";
+} from "../ipc/index.js";
+import { MemoryLinePair } from "../ipc/test-utils.js";
+import { NapukettoDriver } from "./driver.js";
+import type { ChildProcessLike, DriverEvents } from "./types.js";
 
 /** 假子进程：可手动触发 exit。 */
 export class FakeChild implements ChildProcessLike {

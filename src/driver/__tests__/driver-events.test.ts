@@ -3,7 +3,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { encodeIpcMessage, IPC_VERSION } from "../../ipc/index.js";
-import { createHarness } from "./test-utils.js";
+import { createHarness } from "../test-utils.js";
 
 describe("NapukettoDriver 事件转发", () => {
     it("login/qr/event/log 透传给 events 回调", () => {

@@ -2,7 +2,7 @@
  * driver-restart.test.ts：NapukettoDriver 重启 + 心跳失联单测。
  */
 import { describe, expect, it, vi } from "vitest";
-import { createHarness, flush } from "./test-utils.js";
+import { createHarness, flush } from "../test-utils.js";
 
 describe("NapukettoDriver 重启", () => {
     it("崩溃 → 退避重启 → ready 重置计数", async () => {
