@@ -247,6 +247,28 @@ pending 全部 reject（`KernelError("CLOSED")`）。
 **不改的**：dlopen + stub + O3MiscService 激活 + 登录 + session 装配链路（已验证，
 HANDOVER-V9 结论，勿重复探索）。
 
+**✅ 已实现（2026-08-08，§7 落地）**：loader 新增 `src/host/ipc/`（NAPUTO_IPC=1 开启）：
+
+| 文件 | 职责 |
+|---|---|
+| `ipc-types.ts` | 协议消息类型（与插件侧 src/ipc/types.ts 对齐，IPC_VERSION 校验防漂移） |
+| `ipc-codec.ts` | JSON 行编解码（与插件侧 codec.ts 对齐） |
+| `ipc-sender.ts` | 发送封装（status/login/qr/event/log/result/ping/pong；仅 IPC 模式写 stdout） |
+| `ipc-actions.ts` | 动作表（msg.sendMessage/recallMessage/fetchMessages/markRead + group/friend 列表 + login.getSelf；**peerUin 自动转 uid**——注入 groupApi.uinToUid） |
+| `ipc-server.ts` | stdin readline 收 action/control/ping；心跳 15s；control stop/restart 退出 |
+| `ipc-bootstrap.ts` | 装配入口：enableIpc + 动作表 + 服务端 + 事件通道 onAny 转发 |
+
+配套改动：
+- **kernel**：`NTEventChannel.onAny`（全事件订阅，IPC 转发用）+ `CoreLoginOptions.onLoginProgress`
+  （QR 阶段回调：二维码数据 + 状态机，IPC 转发用）
+- **self-host.ts**：IPC 模式发 status（booting → dlopening → logging → sessioning → ready / failed）
+- **protocols.ts** 重构：kernel 服务创建抽到 `kernel-services.ts`（IPC/协议共用），
+  OB11/Satori 装配抽到 `assemble-protocols.ts`（非 IPC 模式零回归）
+- **launcher.ts**：`LaunchOptions.ipc` → 注入 NAPUTO_IPC=1（koishi 插件 driver 复用）
+
+**driver.ts 前提就绪**：spawn `launchSelfHost({ ..., ipc: true, stdio: ["pipe","pipe","pipe"] })`
+→ stdout 收协议行（readline）→ stdin 发 action/control。非 IPC 路径（cli pnpm start）零改动。
+
 ## 8. 红线（继承主仓库）
 
 - **零引入 NapCat 代码**（GPL-2.0-only 不兼容 MIT）：任何文件（含类型定义）不得来自 NapCat
