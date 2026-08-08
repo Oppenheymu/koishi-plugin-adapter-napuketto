@@ -1,22 +1,44 @@
 {
     "$schema": "https://json.schemastore.org/tsconfig",
     "compilerOptions": {
-        "target": "es2022",
-        "module": "es2022",
+        "target": "ES2022",
+        "module": "ES2022",
         "moduleResolution": "bundler",
+        "moduleDetection": "force",
+        "lib": [
+            "ES2022"
+        ],
+        "types": [
+            "node"
+        ],
         "strict": true,
+        "noImplicitAny": true,
+        "strictNullChecks": true,
+        "strictFunctionTypes": true,
+        "strictBindCallApply": true,
+        "strictPropertyInitialization": true,
+        "noImplicitThis": true,
+        "alwaysStrict": true,
+        "noUncheckedIndexedAccess": true,
+        "noPropertyAccessFromIndexSignature": true,
         "exactOptionalPropertyTypes": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "noImplicitReturns": true,
+        "noFallthroughCasesInSwitch": true,
         "noImplicitOverride": true,
-        "useUnknownInCatchVariables": true,
-        "declaration": true,
-        "composite": true,
-        "incremental": true,
-        "skipLibCheck": true,
-        "esModuleInterop": true,
-        "allowSyntheticDefaultImports": true,
+        "allowUnreachableCode": false,
+        "allowUnusedLabels": false,
+        "verbatimModuleSyntax": true,
         "isolatedModules": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
         "forceConsistentCasingInFileNames": true,
-        "noFallthroughCasesInSwitch": true
+        "declaration": true,
+        "declarationMap": true,
+        "noEmit": true
     },
-    "include": ["src"]
+    "include": [
+        "src"
+    ]
 }

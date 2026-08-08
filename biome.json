@@ -5,23 +5,84 @@
         "clientKind": "git",
         "useIgnoreFile": true
     },
+    "files": {
+        "ignoreUnknown": false,
+        "includes": [
+            "**/src/**/*.{ts,tsx,mts,cts,js,mjs,cjs,jsx}"
+        ]
+    },
     "formatter": {
         "enabled": true,
         "indentStyle": "space",
         "indentWidth": 4,
-        "lineWidth": 100,
-        "lineEnding": "lf"
-    },
-    "javascript": {
-        "formatter": {
-            "quoteStyle": "single",
-            "semicolons": "always"
-        }
+        "lineWidth": 100
     },
     "linter": {
         "enabled": true,
         "rules": {
-            "preset": "recommended"
+            "preset": "recommended",
+            "correctness": {
+                "noUnresolvedImports": "off"
+            },
+            "complexity": {
+                "useLiteralKeys": "off"
+            },
+            "style": {
+                "useNamingConvention": {
+                    "level": "error",
+                    "options": {
+                        "strictCase": false,
+                        "conventions": [
+                            {
+                                "selector": {
+                                    "kind": "typeParameter"
+                                },
+                                "formats": [
+                                    "PascalCase"
+                                ]
+                            },
+                            {
+                                "selector": {
+                                    "kind": "typeMember"
+                                },
+                                "formats": [
+                                    "camelCase",
+                                    "snake_case",
+                                    "PascalCase"
+                                ]
+                            },
+                            {
+                                "selector": {
+                                    "kind": "objectLiteralMember"
+                                },
+                                "formats": [
+                                    "camelCase",
+                                    "snake_case",
+                                    "CONSTANT_CASE"
+                                ]
+                            }
+                        ]
+                    }
+                }
+            },
+            "nursery": {
+                "noFloatingPromises": "error"
+            }
+        }
+    },
+    "javascript": {
+        "formatter": {
+            "quoteStyle": "double",
+            "semicolons": "always",
+            "trailingCommas": "all"
+        }
+    },
+    "assist": {
+        "enabled": true,
+        "actions": {
+            "source": {
+                "organizeImports": "on"
+            }
         }
     }
 }
