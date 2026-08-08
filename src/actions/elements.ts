@@ -13,6 +13,7 @@
  *  - 其他 → 降级 { type: "text", text: toString() }（保内容不丢）
  * 字符串 content（koishi 允许 sendMessage(channelId, "纯文本")）→ 单 text 元素。
  */
+import { fileURLToPath } from "node:url";
 import type { CanonicalElement } from "@napuketto/kernel";
 
 /** koishi 元素宽松结构（h() 元素，不 import koishi 主包）。 */
@@ -26,6 +27,11 @@ interface LooseElement {
 /** http(s) URL 判断（远程资源需下载后发送，本轮降级 text）。 */
 function isHttpUrl(value: string): boolean {
     return /^https?:\/\//i.test(value);
+}
+
+/** file: 协议判断（本地文件 URL，redposter 等用 pathToFileURL 生成）。 */
+function isFileUrl(value: string): boolean {
+    return /^file:\/\//i.test(value);
 }
 
 /** 元素内容 → canonical 数组（数组/单元素/字符串兼容）。 */
@@ -70,6 +76,12 @@ function mediaElement(
     const src = String(attrs["src"] ?? "");
     if (src === "") {
         return { type: "text", text: element.toString() };
+    }
+    // file:// URL → 转真实本地路径（fileURLToPath），避免带协议前缀透传给
+    // wrapper.node 导致 rich media transfer failed（redposter 实证）
+    if (isFileUrl(src)) {
+        const local = fileURLToPath(src);
+        return kind === "image" ? { type: "image", path: local } : { type: "voice", path: local };
     }
     return isHttpUrl(src)
         ? { type: "text", text: `[${label}: ${src}]` }

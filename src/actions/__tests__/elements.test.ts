@@ -2,6 +2,7 @@
  * elements.test.ts：koishi 元素 → canonical 反向映射单测（design.md §5.10）。
  */
 
+import { fileURLToPath } from "node:url";
 import type { CanonicalElement } from "@napuketto/kernel";
 import { describe, expect, it } from "vitest";
 import { toCanonicalElements } from "../elements.js";
@@ -72,6 +73,27 @@ describe("toCanonicalElements", () => {
         const img = makeElement("img", { src: "https://x/1.png" });
         expect(toCanonicalElements([img])).toEqual([
             { type: "text", text: "[图片: https://x/1.png]" },
+        ]);
+    });
+
+    it("img file:// URL → 转真实本地路径（redposter pathToFileURL 实证）", () => {
+        const img = makeElement("img", {
+            src: "file:///C:/Dev/QQBot-Dev/koishi-dev/data/redseries/redposter/e15-789.jpg",
+        });
+        expect(toCanonicalElements([img])).toEqual([
+            {
+                type: "image",
+                path: fileURLToPath(
+                    "file:///C:/Dev/QQBot-Dev/koishi-dev/data/redseries/redposter/e15-789.jpg",
+                ),
+            },
+        ]);
+    });
+
+    it("audio file:// URL → 转真实本地路径", () => {
+        const audio = makeElement("audio", { src: "file:///C:/tmp/a.silk" });
+        expect(toCanonicalElements([audio])).toEqual([
+            { type: "voice", path: fileURLToPath("file:///C:/tmp/a.silk") },
         ]);
     });
 
