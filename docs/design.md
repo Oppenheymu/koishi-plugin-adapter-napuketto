@@ -196,3 +196,76 @@ HANDOVER-V9 结论，勿重复探索）。
 - **kernel 唯一原生交互层**：插件不得 `process.dlopen` / 访问 wrapper.node
 - **技术栈与主仓库一致**：TS7.0 + ES2025 + NodeNext + strict 全家桶 + biome 双引号
 - **子进程方案**：不改成进程内 dlopen（§5.2 决策，除非用户推翻）
+
+---
+
+## 9. 参考项目（2026-08-08 调研）
+
+> 两个开源参考：`koishi-plugin-adapter-napcat`（6.9.3-napcat.0，NapCat 官方适配器，
+> MIT）+ `koishi-plugin-adapter-onebot`（Koishi 官方 OneBot 适配器）。两者是同一架构
+> 谱系（napcat 基于 onebot 扩展），**照葫芦画瓢的核心是 koishi Bot/MessageEncoder/
+> adaptSession 骨架**，但它们本质是「网络客户端」模式（HTTP/WS 连接外部服务），
+> **不是**我们的「进程编排」模式（IPC 连接自建宿主）——传输层是唯一差异，骨架可借鉴。
+
+### 9.1 可借鉴的骨架（napcat/onebot 同构）
+
+```
+src/
+├── index.ts          # 入口：name/usage/Config/apply + declare module 扩展
+├── bot/
+│   ├── index.ts      # NapCatBot extends BaseBot（注册平台、协议选择）
+│   ├── base.ts       # BaseBot extends Bot：Bot 生命周期 + internal 调用
+│   ├── message.ts    # OneBotMessageEncoder extends MessageEncoder（发送）
+│   ├── cqcode.ts     # CQCode 解析（消息元素 ↔ CQ 码）
+│   └── qqguild.ts    # 频道 Bot（guild service，NapCat 特有）
+├── http.ts           # HttpServer extends Adapter（HTTP 连接，action 请求 + 事件推送）
+├── ws.ts             # WsClient / WsServer（WS 连接）
+├── types.ts          # OneBot 类型定义
+└── utils.ts          # adaptSession / adaptMessage / dispatchSession / Internal
+```
+
+**核心模式**：
+
+| 模式 | 参考实现 | 我们的对应 |
+|---|---|---|
+| **Bot 子类** | `BaseBot extends Bot<C, T>`，`static inject = ['http']` | `NapukettoBot extends Bot`（§5.4） |
+| **MessageEncoder** | `OneBotMessageEncoder extends MessageEncoder`（元素 → 协议格式） | 元素 → kernel canonical（§5.4） |
+| **internal API 封装** | `bot.internal` = `Internal` 类，所有动作 `internal.getMsg()` 等 | `NapukettoInternal`：经 IPC 调 kernel API（§5.4） |
+| **传输抽象** | `internal._request = async (action, params) => http.post(...)` | `internal._request = async (action, params) => ipc.request(action, params)` |
+| **事件分发** | `dispatchSession(bot, payload)` → `adaptSession` → `bot.dispatch(session)` | `dispatchSession(bot, kernelEvent)` → 翻译 → `bot.dispatch`（§5.3） |
+| **Session 扩展** | `declare module '@satorijs/core' { interface Session { onebot?: ... } }` | `declare module` 扩展 napuketto 事件字段 |
+| **平台扩展** | `declare module 'koishi' { interface Events { 'onebot/...': ... } }` | `declare module` 扩展 koishi Events |
+
+**关键洞察——`internal._request` 传输抽象**：napcat 把「动作调用」与「传输方式」解耦
+（HTTP 时 `_request = http.post`），我们只需把 `_request` 换成 IPC 请求，**Bot/MessageEncoder/
+adaptSession 骨架可几乎原样借鉴**（除元素格式：它们用 CQ 码，我们用 kernel canonical）。
+
+### 9.2 关键差异（必须自研的部分）
+
+| 维度 | napcat/onebot | 我们 |
+|---|---|---|
+| **NapCat 本体** | 独立进程（NapCat 服务，HTTP/WS） | 无独立进程——自建宿主子进程（`self-host.cjs`） |
+| **传输** | HTTP POST / WS 连接（`http.ts`/`ws.ts`） | 子进程 IPC（`driver.ts`/`ipc.ts`） |
+| **事件格式** | OneBot payload（`post_type`/`message_type` 等） | kernel 事件模型（NTEventChannel） |
+| **消息元素** | CQ 码（`[CQ:at,qq=xxx]`） | kernel canonical 元素（text/at/face/image/voice/reply） |
+| **登录** | 无（NapCat 自己登录） | 插件驱动子进程登录（快速/QR，§5.5） |
+| **协议适配** | 只认 OneBot（`http.ts`/`ws.ts` 直连） | kernel 语义化 API（不依赖具体协议） |
+
+**结论**：借鉴 **Bot/MessageEncoder/internal/adaptSession 骨架**（§9.1），自研 **driver/ipc
+传输层 + kernel 事件/元素翻译**（§5.2/§5.3/§5.4）。napcat 的 `http.ts`/`ws.ts` 无参考价值
+（传输完全不同），但 `bot/` + `utils.ts` 的骨架是极佳范本。
+
+### 9.3 参考实现的细节要点（实现时对照）
+
+1. **`adaptSession`**：payload → koishi `Session` 字段映射（`session.type/subtype/
+   userId/channelId/guildId/isDirect`），私聊 `channelId = 'private:' + userId`，
+   群聊 `guildId = channelId = group_id`——**会话标识映射照此模式**（§5.3 的 Peer → Session）。
+2. **`adaptMessage`**：`message.id`、`elements`（CQ 码 → koishi 元素 `h()`）、`quote`
+   （reply 元素取首 → `bot.getMessage` 拉引用）、`content = elements.join('')`。
+3. **`dispatchSession`**：`bot.session()` → 填字段 → `session.setInternal` → `bot.dispatch`。
+4. **Bot 生命周期**：`initialize()` 里 `getLogin()` → `online()`，失败 `offline(error)`
+   ——koishi 平台注册的成败挂钩。
+5. **`static inject`**：声明依赖（napcat 用 `['http']`、`['server']`），我们不用 network/
+   http，可能不需要 inject（除非用到 koishi 内置服务）。
+6. **`MessageEncoder`**：`forward()`（合并转发）、`flush()`（内容拼接）、`prepare()`
+   （channel 类型补全）——发送链路的标准骨架。
