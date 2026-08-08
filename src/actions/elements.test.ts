@@ -1,0 +1,103 @@
+/**
+ * elements.test.ts：koishi 元素 → canonical 反向映射单测（design.md §5.10）。
+ */
+
+import type { CanonicalElement } from "@napuketto/kernel";
+import { describe, expect, it } from "vitest";
+import { toCanonicalElements } from "./elements.js";
+
+/** 内存 koishi 元素构造（mock h 同构，events/test-utils 模式）。 */
+function makeElement(
+    type: string,
+    attrs: Record<string, unknown> = {},
+    children: unknown[] = [],
+): unknown {
+    const attrsStr = Object.entries(attrs)
+        .map(([key, value]) => ` ${key}="${String(value)}"`)
+        .join("");
+    const content = children.map((child) => String(child)).join("");
+    return {
+        type,
+        attrs,
+        children,
+        toString: () => `<${type}${attrsStr}>${content}</${type}>`,
+    };
+}
+
+describe("toCanonicalElements", () => {
+    it("字符串 content → 单 text 元素", () => {
+        expect(toCanonicalElements("你好")).toEqual([{ type: "text", text: "你好" }]);
+    });
+
+    it("空字符串 → 空数组", () => {
+        expect(toCanonicalElements("")).toEqual([]);
+    });
+
+    it("text 元素 → children 字符串 join", () => {
+        const el = makeElement("text", {}, ["早上好"]);
+        expect(toCanonicalElements([el])).toEqual([{ type: "text", text: "早上好" }]);
+    });
+
+    it("at → target（all 原样）", () => {
+        const at = makeElement("at", { id: "u_1" });
+        expect(toCanonicalElements([at])).toEqual([{ type: "at", target: "u_1" }]);
+
+        const all = makeElement("at", { id: "all" });
+        expect(toCanonicalElements([all])).toEqual([{ type: "at", target: "all" }]);
+    });
+
+    it("image → path（本地路径）", () => {
+        const img = makeElement("image", { src: "C:/tmp/1.png" });
+        expect(toCanonicalElements([img])).toEqual([{ type: "image", path: "C:/tmp/1.png" }]);
+    });
+
+    it("image URL → 降级 text（需下载后发送）", () => {
+        const img = makeElement("image", { src: "https://x/1.png" });
+        expect(toCanonicalElements([img])).toEqual([
+            { type: "text", text: "[图片: https://x/1.png]" },
+        ]);
+    });
+
+    it("face → id", () => {
+        const face = makeElement("face", { id: "178" });
+        expect(toCanonicalElements([face])).toEqual([{ type: "face", id: "178" }]);
+    });
+
+    it("audio → voice（本地路径）", () => {
+        const audio = makeElement("audio", { src: "C:/tmp/a.silk" });
+        expect(toCanonicalElements([audio])).toEqual([{ type: "voice", path: "C:/tmp/a.silk" }]);
+    });
+
+    it("quote → reply", () => {
+        const quote = makeElement("quote", { id: "12345" });
+        expect(toCanonicalElements([quote])).toEqual([{ type: "reply", messageId: "12345" }]);
+    });
+
+    it("未知元素 → 降级 text（toString 保内容）", () => {
+        const video = makeElement("video", { src: "x.mp4" }, ["内容"]);
+        const out = toCanonicalElements([video]) as CanonicalElement[];
+        expect(out).toHaveLength(1);
+        expect(out[0]).toMatchObject({ type: "text" });
+        expect((out[0] as { text: string }).text).toContain("video");
+        expect((out[0] as { text: string }).text).toContain("内容");
+    });
+
+    it("缺失关键 attrs → 降级 text", () => {
+        const brokenAt = makeElement("at", {});
+        const out = toCanonicalElements([brokenAt]) as CanonicalElement[];
+        expect(out[0]).toMatchObject({ type: "text" });
+    });
+
+    it("混合元素顺序保留", () => {
+        const out = toCanonicalElements([
+            makeElement("text", {}, ["早上好"]),
+            makeElement("at", { id: "u_1" }),
+            makeElement("text", {}, ["！"]),
+        ]);
+        expect(out).toEqual([
+            { type: "text", text: "早上好" },
+            { type: "at", target: "u_1" },
+            { type: "text", text: "！" },
+        ]);
+    });
+});

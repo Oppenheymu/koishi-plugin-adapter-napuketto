@@ -107,7 +107,13 @@ apps/koishi-plugin-adapter-napuketto/
 │   │   ├── adapt.ts          #   RawMessage → session 字段（群聊/私聊/临时会话）
 │   │   ├── bridge.ts         #   NapukettoEventBridge：kernel 事件 → dispatch
 │   │   └── *.test.ts         #   单测（17 用例，mock h 注入不依赖 koishi 运行时）
-│   ├── actions.ts            # 动作调用：koishi 动作 → kernel API（经 IPC）
+│   ├── actions/              # 动作桥（§5.10，实现顺序第 5 步）
+│   │   ├── index.ts          #   出口（barrel）
+│   │   ├── types.ts          #   RequestFn 传输抽象 / NapukettoInternalOptions / PeerTarget
+│   │   ├── elements.ts       #   koishi 元素 → canonical（反向映射，纯函数）
+│   │   ├── channel.ts        #   channelId → Peer 参数（群聊/私聊/临时会话，纯函数）
+│   │   ├── internal.ts       #   NapukettoInternal：koishi bot.internal 封装
+│   │   └── *.test.ts         #   单测（mock request 注入，不依赖 koishi 运行时）
 │   └── config.ts             # Config schema（koishi Schema）
 ├── docs/
 │   └── design.md             # 本文件
@@ -388,6 +394,71 @@ const bridge = new NapukettoEventBridge({
 
 **本轮不做**：群通知（GroupBridge）/ 请求类 → notice/request 系列（§6.6 后续）；
 消息记录（`message-deleted` 等）——先打通 message 事件（验证点）。
+
+### 5.10 动作桥细节（`actions.ts`，实现顺序第 5 步）
+
+**定位**：koishi Bot 动作 → IPC action 请求 → 子进程 kernel API。与事件桥（§5.9）对称：
+事件桥做 kernel → koishi（收到消息），动作桥做 koishi → kernel（发出消息）。
+**验证点：koishi 里能回复消息。**
+
+**形态**：`src/actions/` 目录（单文件 ≤300 行约束）：
+
+| 文件 | 职责 |
+|---|---|
+| `types.ts` | `RequestFn`（传输抽象）/ `NapukettoInternalOptions` / `PeerTarget` |
+| `elements.ts` | koishi 元素 → canonical（与 events/elements.ts 对称，纯函数） |
+| `channel.ts` | channelId → Peer 参数（群聊/私聊/临时会话，纯函数） |
+| `internal.ts` | `NapukettoInternal`：koishi `bot.internal` 封装（`_request` 传输抽象 + 核心动作） |
+| `index.ts` | barrel |
+
+**传输抽象**（napcat `internal._request` 同构，§9.1——把 HTTP 换成 IPC 请求）：
+
+```ts
+type RequestFn = (action: string, params?: Record<string, unknown>) => Promise<unknown>;
+// apply() 层注入：request = (action, params) => client.request(action, params)
+```
+
+**核心动作映射**（loader 侧动作表已就绪，§7：`msg.sendMessage/recallMessage/fetchMessages/
+markRead` + `group.getGroupList` + `friend.getFriendList` + `login.getSelf`；**peerUin 自动转
+uid**——注入 groupApi.uinToUid）：
+
+| koishi 动作 | IPC action | params |
+|---|---|---|
+| `sendMessage(channelId, content)` | `msg.sendMessage` | `{ chatType, peerUin, elements: canonical[] }` |
+| `deleteMessage(channelId, messageId)` | `msg.recallMessage` | `{ chatType, peerUin, msgIds: [messageId] }` |
+| `getMessageList(channelId, before?, limit?)` | `msg.fetchMessages` | `{ chatType, peerUin, count, msgId? }` |
+| `markAsRead(channelId)` | `msg.markRead` | `{ chatType, peerUin }` |
+| `getGroupList()` | `group.getGroupList` | — |
+| `getFriendList()` | `friend.getFriendList` | — |
+| `getSelf()` | `login.getSelf` | — |
+
+**channelId 解析**（与事件桥 §5.9 会话标识映射对称）：
+
+| channelId | guildId | chatType | peerUin |
+|---|---|---|---|
+| 群号（纯数字） | — | 2（GROUP） | 群号 |
+| `private:` + uin | 无 | 1（C2C） | uin |
+| `private:` + uin | 有（群号） | 100（TEMP 临时会话） | uin |
+
+**元素反向映射**（koishi → canonical，与 §5.9 对称；attrs 键名 §5.9 已确认：
+`h.at` → `{ id }`、`h.image` → `{ src }`、`h.quote` → `{ id }`、`h.audio` → `{ src }`）：
+
+| koishi | canonical | 备注 |
+|---|---|---|
+| `text`（children join） | `{ type: "text", text }` | |
+| `at`（attrs.id） | `{ type: "at", target }` | `id="all"` 原样 |
+| `image`（attrs.src） | `{ type: "image", path }` | 本地路径；**http(s) URL 降级 text**（需下载后发送，后续轮次） |
+| `face`（attrs.id） | `{ type: "face", id }` | |
+| `audio`（attrs.src） | `{ type: "voice", path }` | 本地路径；URL 降级 text |
+| `quote`（attrs.id） | `{ type: "reply", messageId }` | |
+| 其他（p/br/video/file/…） | `{ type: "text", text: toString() }` | 保内容不丢 |
+
+字符串 content（koishi 允许 `sendMessage(channelId, "纯文本")`）→ 单 text 元素；
+空内容 → 空数组 → `sendMessage` 返回 `[]`（不发请求）。
+`getMessageList` 返回 `{ data: RawMessage[], next: 末条 msgId }`（koishi MessageList 形状）。
+
+**可单测**：`elements.ts` / `channel.ts` 纯函数直测；`internal.ts` 注入 mock request
+（`vi.fn`）断言动作名 + params。koishi 主包不 import（HANDOVER §7 坑 1），类型宽松结构。
 
 ## 6. 实现顺序（一个模块一个模块，每步跑 `pnpm check`）
 
