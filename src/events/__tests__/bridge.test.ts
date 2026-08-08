@@ -119,4 +119,37 @@ describe("NapukettoEventBridge", () => {
         bridge.handle(recvPayload([null, "string", raw]));
         expect(dispatch).toHaveBeenCalledTimes(1);
     });
+
+    it("系统占位消息（senderUin=0）跳过，不 dispatch", () => {
+        const dispatch = vi.fn();
+        const bridge = new NapukettoEventBridge({ dispatch, selfId: () => "1", h: mockH() });
+        const system: Record<string, unknown> = {
+            msgId: "sys1",
+            msgSeq: "0",
+            msgTime: "0",
+            msgType: 9,
+            chatType: 2,
+            peerUid: "u",
+            peerUin: "10001",
+            senderUid: "u",
+            senderUin: "0",
+            peerName: "",
+            sendNickName: "",
+            elements: [],
+        };
+        // 批量里混着 2 条系统消息 + 1 条真实消息 → 只 dispatch 真实消息
+        bridge.handle(
+            recvPayload([
+                system,
+                { ...system, msgId: "sys2" },
+                { ...system, msgId: "real", senderUin: "20001" },
+            ]),
+        );
+        expect(dispatch).toHaveBeenCalledTimes(1);
+        expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
+            type: "message",
+            userId: "20001",
+            channelId: "10001",
+        });
+    });
 });

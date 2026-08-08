@@ -410,6 +410,15 @@ const bridge = new NapukettoEventBridge({
 `session.type/elements/isDirect` 填充 → dispatch。`Msg/onRecvMsg` 的 args 是**消息数组**
 （运行时实证，§5.3 注）→ 遍历逐条翻译。
 
+**⚠️ 过滤系统占位消息**（2026-08-09 修复）：`Msg/onRecvMsg` 批量推送里可能混有
+`senderUin="0"` 的系统占位消息（元素为空、无业务价值，群通知本身走
+`Group/onGroupNotifiesUpdated` 专门事件）。bridge 直接跳过，不 dispatch——否则
+koishi attach 会对无价值消息 `get-or-create channel`，且多条同 tick 时撞 koishi
+get-or-create 的并发竞态：`UNIQUE constraint failed: channel.id, channel.platform`
+（实测 2026-08-09：同批 4 条系统消息 → 1 成功 + 3 冲突。记录本身创建成功、后续
+get 命中不复发，纯日志噪音，但无意义——根因是 koishi `Session.getChannel` 的
+get-or-create 无互斥：并发 SELECT 全部先于首个 INSERT，随后多次 INSERT 撞唯一键）。
+
 **⚠️ 只设 elements 不设 content**（2026-08-08 三稿修复）：satorijs `Session.content` 是
 getter（`elements.join("")` 派生），**setter 会用 `h.parse(value)` 覆盖 elements**——若
 adapt 层同时填 content，结构化元素（at/img/face）会被 parse 覆盖丢失，且 content 含特殊
