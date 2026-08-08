@@ -3,8 +3,8 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { NapukettoInternal } from "./internal.js";
-import type { RequestFn } from "./types.js";
+import { NapukettoInternal } from "../internal.js";
+import type { RequestFn } from "../types.js";
 
 /** 构造 internal + mock request（记录调用，可自定义返回）。 */
 function createInternal(

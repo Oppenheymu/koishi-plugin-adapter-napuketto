@@ -4,7 +4,7 @@
 
 import type { CanonicalElement } from "@napuketto/kernel";
 import { describe, expect, it } from "vitest";
-import { toCanonicalElements } from "./elements.js";
+import { toCanonicalElements } from "../elements.js";
 
 /** 内存 koishi 元素构造（mock h 同构，events/test-utils 模式）。 */
 function makeElement(

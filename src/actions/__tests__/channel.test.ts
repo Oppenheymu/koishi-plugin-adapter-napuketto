@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { parseChannelId } from "./channel.js";
+import { parseChannelId } from "../channel.js";
 
 describe("parseChannelId", () => {
     it("群号 → chatType=2 GROUP", () => {
