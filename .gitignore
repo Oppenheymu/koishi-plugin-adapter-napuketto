@@ -31,5 +31,3 @@ pnpm-debug.log*
 *.ntvs*
 *.njsproj
 *.sln
-
-docs/
