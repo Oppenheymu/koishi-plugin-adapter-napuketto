@@ -4,6 +4,7 @@
     "contributors": [
         "Oppenheymu <oppenheymu@gmail.com>"
     ],
+    "type": "module",
     "description": "NapukettoQQ 的 Koishi 适配器：让 Koishi 直接驱动 NapukettoQQ（自研 QQ NT wrapper.node 协议层）",
     "main": "lib/index.cjs",
     "types": "lib/index.d.cts",
