@@ -4,7 +4,7 @@
  * 元素映射（canonical → koishi）：
  *  - text → h.text
  *  - at → h.at（target "all" 原样）
- *  - image → h.image（url 优先，path 兜底）
+ *  - image → h("img", ...)（koishi 标准元素是 img，onebot 实证；url 优先，path 兜底）
  *  - face → h("face", { id })
  *  - voice → h.audio（url 优先，path 兜底）
  *  - reply → h.quote
@@ -35,7 +35,8 @@ function toKoishiElement(element: CanonicalElement, h: HFn): unknown {
         case "at":
             return h("at", { id: element.target });
         case "image":
-            return h("image", { src: element.url ?? element.path });
+            // koishi 标准图片元素是 img（onebot 实证）；url 优先，path 兜底
+            return h("img", { src: element.url ?? element.path });
         case "face":
             return h("face", { id: element.id });
         case "voice":

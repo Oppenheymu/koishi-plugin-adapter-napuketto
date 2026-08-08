@@ -43,6 +43,8 @@ export function adaptRawMessage(msg: RawMessage, options: AdaptOptions): Napuket
         timestamp: Number(msg.msgTime) * 1000,
         userId: senderUin,
         messageId: msg.msgId,
+        // 群聊非私聊；私聊/临时会话 isDirect=true（驱动 event.channel.type）
+        isDirect: !isGroup,
         ...(isGroup
             ? { channelId: groupCode, guildId: groupCode }
             : { channelId: `${PRIVATE_PREFIX}${senderUin}` }),
@@ -53,9 +55,11 @@ export function adaptRawMessage(msg: RawMessage, options: AdaptOptions): Napuket
     }
 
     // NT RawElement → canonical → koishi 元素
+    // ⚠️ 只设 elements：satorijs Session.content 是 getter（elements.join("") 派生）；
+    // 若直接设 content 字段会走 setter → h.parse(value) 覆盖 elements（结构化元素丢失，
+    // 且 content 含特殊字符时 parse 可能抛错导致 dispatch 失败——onebot 实证规避）。
     const elements = toKoishiElements(toCanonicalElements(msg), h);
     session.elements = elements;
-    session.content = elements.map(String).join("");
 
     return session;
 }

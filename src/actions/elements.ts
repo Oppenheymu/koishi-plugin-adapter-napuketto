@@ -6,7 +6,7 @@
  *  - text → { type: "text", text }（attrs.content 优先，children join 兜底）
  *  - br → { type: "text", text: "\n" }
  *  - at → { type: "at", target: attrs.id }（id="all" 原样）
- *  - image → { type: "image", path: attrs.src }（本地路径；URL 降级 text，需下载）
+ *  - img/image → { type: "image", path: attrs.src }（koishi 标准元素是 img；本地路径；URL 降级 text）
  *  - face → { type: "face", id: attrs.id }
  *  - audio → { type: "voice", path: attrs.src }（本地路径；URL 降级 text）
  *  - quote → { type: "reply", messageId: attrs.id }
@@ -73,7 +73,9 @@ function toCanonicalElement(element: LooseElement): CanonicalElement {
                 ? { type: "text", text: element.toString() }
                 : { type: "at", target: id };
         }
+        case "img":
         case "image": {
+            // koishi 标准图片元素是 img（h("img", ...)），兼容旧 image 写法
             const src = String(attrs["src"] ?? "");
             if (src === "") {
                 return { type: "text", text: element.toString() };

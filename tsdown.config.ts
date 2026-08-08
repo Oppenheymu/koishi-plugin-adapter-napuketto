@@ -17,4 +17,14 @@ export default defineConfig({
     outDir: 'lib',
     clean: true,
     dts: true,
+    deps: {
+        // koishi 生态 d.ts 用 CJS dts 语法（export = Element）或 namespace 成员
+        // re-export（Fragment/Render），dts 打包无法解析 → 生成 d.ts 时保持
+        // 外部引用（产物 d.ts 保留 import，消费端由 koishi 提供类型）。
+        // JS 产物仍按发布形态 bundle @napuketto/*（devDependencies），
+        // koishi 保持 external（peer 单实例）——deps.dts 只覆盖声明生成。
+        dts: {
+            neverBundle: [/^koishi/, /^@satorijs\//, /^@koishijs\//, /^cordis/, /^minato/, /^cosmokit/],
+        },
+    },
 });

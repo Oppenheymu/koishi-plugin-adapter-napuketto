@@ -378,7 +378,7 @@ apply() 层可查（driver 已按重启策略兜底）。
 |---|---|
 | `{ type: "text", text }` | `h.text(text)` |
 | `{ type: "at", target }` | `h.at(target)`（target 为 "all" → `h.at("all")`） |
-| `{ type: "image", url?/path }` | `h.image(url ?? path)` |
+| `{ type: "image", url?/path }` | `h("img", { src })`（**koishi 标准元素是 img**，onebot 实证；url 优先，path 兜底） |
 | `{ type: "face", id }` | `h("face", { id })`（emoji 元素，QQ 表情码） |
 | `{ type: "voice", url?/path }` | `h.audio(url ?? path)` |
 | `{ type: "reply", messageId }` | `h.quote(messageId)`（引用） |
@@ -395,8 +395,14 @@ const bridge = new NapukettoEventBridge({
 ```
 
 **翻译链路**：`payload.args[0]`（RawMessage）→ `adaptRawMessage` → `adaptElements` →
-`session.type/elements/content` 填充 → dispatch。`Msg/onRecvMsg` 的 args 是**消息数组**
+`session.type/elements/isDirect` 填充 → dispatch。`Msg/onRecvMsg` 的 args 是**消息数组**
 （运行时实证，§5.3 注）→ 遍历逐条翻译。
+
+**⚠️ 只设 elements 不设 content**（2026-08-08 三稿修复）：satorijs `Session.content` 是
+getter（`elements.join("")` 派生），**setter 会用 `h.parse(value)` 覆盖 elements**——若
+adapt 层同时填 content，结构化元素（at/img/face）会被 parse 覆盖丢失，且 content 含特殊
+字符时 parse 可能抛错导致 dispatch 失败（数据库无记录）。翻译层只产 `elements`（+ `isDirect`
+驱动 `event.channel.type`），content 由 koishi getter 自动派生。
 
 **本轮不做**：群通知（GroupBridge）/ 请求类 → notice/request 系列（§6.6 后续）；
 消息记录（`message-deleted` 等）——先打通 message 事件（验证点）。
@@ -447,13 +453,13 @@ uid**——注入 groupApi.uinToUid）：
 | `private:` + uin | 有（群号） | 100（TEMP 临时会话） | uin |
 
 **元素反向映射**（koishi → canonical，与 §5.9 对称；attrs 键名 §5.9 已确认：
-`h.at` → `{ id }`、`h.image` → `{ src }`、`h.quote` → `{ id }`、`h.audio` → `{ src }`）：
+`h.at` → `{ id }`、`h("img")` → `{ src }`、`h.quote` → `{ id }`、`h.audio` → `{ src }`）：
 
 | koishi | canonical | 备注 |
 |---|---|---|
 | `text`（children join） | `{ type: "text", text }` | |
 | `at`（attrs.id） | `{ type: "at", target }` | `id="all"` 原样 |
-| `image`（attrs.src） | `{ type: "image", path }` | 本地路径；**http(s) URL 降级 text**（需下载后发送，后续轮次） |
+| `img`（attrs.src） | `{ type: "image", path }` | **koishi 标准元素是 img**（兼容旧 `image` 写法）；本地路径；**http(s) URL 降级 text**（需下载后发送，后续轮次） |
 | `face`（attrs.id） | `{ type: "face", id }` | |
 | `audio`（attrs.src） | `{ type: "voice", path }` | 本地路径；URL 降级 text |
 | `quote`（attrs.id） | `{ type: "reply", messageId }` | |

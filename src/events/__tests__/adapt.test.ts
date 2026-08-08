@@ -49,6 +49,7 @@ describe("adaptRawMessage", () => {
         expect(session.channelId).toBe("10001");
         expect(session.guildId).toBe("10001");
         expect(session.messageId).toBe("m1");
+        expect(session.isDirect).toBe(false);
     });
 
     it("私聊 → message.private + channelId=private:+senderUin", () => {
@@ -59,6 +60,7 @@ describe("adaptRawMessage", () => {
         expect(session.type).toBe("message.private");
         expect(session.channelId).toBe("private:20001");
         expect(session.guildId).toBeUndefined();
+        expect(session.isDirect).toBe(true);
     });
 
     it("临时会话 → message.private + guildId=群号", () => {
@@ -66,11 +68,15 @@ describe("adaptRawMessage", () => {
         expect(session.type).toBe("message.private");
         expect(session.channelId).toBe("private:20001");
         expect(session.guildId).toBe("10001");
+        expect(session.isDirect).toBe(true);
     });
 
-    it("元素翻译：文本 → content", () => {
+    it("元素翻译：文本 → elements（content 由 elements getter 派生）", () => {
         const session = adaptRawMessage(makeMsg(), adaptOpts());
-        expect(session.content).toContain("你好");
+        // adapt 层只设 elements（不设 content——content setter 会 h.parse 覆盖 elements）
+        expect(session.elements).toHaveLength(1);
+        expect(String(session.elements?.[0])).toContain("你好");
+        expect(session.content).toBeUndefined();
     });
 
     it("timestamp = msgTime × 1000", () => {

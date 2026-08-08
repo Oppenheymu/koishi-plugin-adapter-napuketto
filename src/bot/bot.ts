@@ -302,11 +302,16 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
         if (fields.messageId !== undefined) {
             session.messageId = fields.messageId;
         }
+        // 私聊/群聊判定（event.channel.type = DIRECT/TEXT；不设则 isDirect 恒 false，
+        // 私聊消息会被当群聊路由——onebot 实证）
+        if (fields.isDirect !== undefined) {
+            session.isDirect = fields.isDirect;
+        }
+        // ⚠️ 只设 elements：satorijs content 是 getter（elements.join("") 派生）；
+        // 若设 session.content 会走 setter → h.parse(value) 覆盖 elements（结构化
+        // 元素丢失，含特殊字符时 parse 可能抛错 → dispatch 失败）。
         if (fields.elements !== undefined) {
             session.elements = fields.elements as h[];
-        }
-        if (fields.content !== undefined) {
-            session.content = fields.content;
         }
         this.dispatch(session);
     }

@@ -17,6 +17,8 @@ export interface NapukettoSessionFields {
     channelId?: string;
     guildId?: string;
     messageId?: string;
+    /** 是否私聊（私聊/临时会话 true；驱动 event.channel.type = DIRECT/TEXT）。 */
+    isDirect?: boolean;
     /** koishi 元素数组（h[]，经 Element.toElementArray 可解析）。 */
     elements?: unknown[];
     content?: string;

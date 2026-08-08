@@ -22,7 +22,7 @@ koishi 插件（本包）                    Napuketto 子进程（self-host.cjs
   └─ 事件桥（events/） → bot.dispatch  →    ← action 请求 → kernel API
 ```
 
-## 2. 施工进度（截至 2026-08-08 深夜二稿，已全部提交）
+## 2. 施工进度（截至 2026-08-08 深夜三稿，已全部提交）
 
 | 实现顺序（design.md §6） | 模块 | 状态 | 提交（子仓库） | 备注 |
 |---|---|---|---|---|
@@ -35,10 +35,11 @@ koishi 插件（本包）                    Napuketto 子进程（self-host.cjs
 | 5 | `src/actions/` 动作桥 | ✅ | 801067b | koishi 动作 → IPC action，27 单测 |
 | 6 | `src/bot/` Bot 集成 | ✅ | d8ac06c | **端到端验证点**，NapukettoBot + MessageEncoder + launch |
 | 6.5 | 类型修复 + selfHostEntry（收尾启动） | ✅ | 6867d70 + ff0e369 | Context 泛型逆变修复 + 发布形态方案 a（config 覆盖入口） |
+| 6.8 | dispatch 链路三 bug 修复 + 构建修复 | ✅ | 三稿 | **数据库无记录的根因**（content 覆盖 elements / img 元素 / isDirect），见 §5 |
 | 7 | 收尾（多账号/文档/发布） | ⏳ **下一步** | — | 端到端联调（进行中）+ changesets + koishi 市场 |
 
-**子仓库 HEAD = ff0e369，工作区干净**；主仓库 HEAD = ad79d68，工作区干净，**领先 origin 5 提交未 push**。
-**新会话第一件事：push 两个仓库到 origin**（主仓库 5 提交 + 子仓库已同步）。
+**子仓库 HEAD = 三稿提交**；主仓库 HEAD = 017376d（含 koishi submodule 指针更新），工作区干净。
+**新会话第一件事：push 两个仓库到 origin**（主仓库 + 子仓库三稿提交）。
 
 ## 3. 已实现模块速览（新会话必读）
 
@@ -142,6 +143,41 @@ koishi 插件（本包）                    Napuketto 子进程（self-host.cjs
 4. ✅ **真实 QQ 消息到达 koishi 侧**（debug 日志实证：事件转发 + getLogin OK）。
 5. ⚠️ **待确认**：事件桥 dispatch 到 koishi 会话（数据库无 napuketto 记录，可能 session
    content 为空或 dispatch 未生效）；动作桥回复链路（sandbox 发 help 未确认回复）。
+
+### 端到端联调收尾：dispatch 链路三 bug 修复（2026-08-08 深夜三稿）
+
+对照 onebot 参考适配器（`C:\Dev\QQBot-Dev\koishi-plugin-adapter-onebot-main\src\utils.ts`
+`adaptMessage`/`adaptSession` + `src\bot\message.ts`）审查 dispatch 链路，定位并修复三个 bug
+（**数据库无 napuketto 记录的根因**）：
+
+1. **`content` setter 覆盖 `elements`（根因）**：`bot.ts dispatchSession` 先 `session.elements =
+   [...]` 再 `session.content = [...]`——satorijs `Session.content` **setter 会用
+   `h.parse(value)` 覆盖 `event.message.elements`**（查 `@satorijs/core@4.6.0` lib/index.mjs
+   208 行实证）。后果：① 结构化元素（at/img/face 等）被重新 parse 覆盖丢失；② content 含
+   特殊字符（如 `3 < 4`）时 `h.parse` 可能抛错 → **dispatch 失败 → 数据库无记录**。
+   **修复**：`adapt.ts` 与 `dispatchSession` 只设 `elements`（content 是 getter，
+   `elements.join("")` 派生），不再设 content 字段。
+2. **`image` 元素类型错误**：`events/elements.ts` 用 `h("image", ...)`，但 koishi 标准图片
+   元素是 **`img`**（onebot 实证 `h('img', ...)`）；反向映射 `actions/elements.ts` 也只匹配
+   `image` 匹配不上 `img`。**修复**：正向 `h("img", ...)`，反向 `case "img"`（兼容 `image`）。
+3. **缺 `isDirect`**：`event.channel.type` 从未设置 → `session.isDirect` 恒 false → **私聊
+   消息被当群聊路由**（koishi 会话判定错误）。**修复**：`NapukettoSessionFields` 增
+   `isDirect`，`adaptRawMessage` 群聊 false / 私聊+临时 true，`dispatchSession` 设
+   `session.isDirect`。
+
+**验证**：单测 274 全绿（新增 img 兼容 + isDirect 断言）；biome + tsc 通过。剩余验证点：
+koishi 控制台实收 QQ 消息（需重启 koishi-dev 联调，dispatch 链路已修）。
+
+### 构建修复：dts 打包错误（2026-08-08 深夜三稿）
+
+`pnpm build` 报 `MISSING_EXPORT: "Fragment"/"Render" is not exported by @satorijs/element`
+（rolldown-plugin-dts 无法打包 koishi 生态 d.ts：`@satorijs/element` 是 CJS dts
+`export = Element`，`Fragment`/`Render` 是 namespace 成员被 `@satorijs/core` re-export）。
+`dts.external` 配置不生效（那是 rolldown-plugin-dts 选项，不是 tsdown 的）——
+**正确配置是 `deps.dts.neverBundle`**（tsdown 依赖配置里专门控制声明生成时的 external）。
+已加 `neverBundle: [/^koishi/, /^@satorijs\//, /^@koishijs\//, /^cordis/, /^minato/, /^cosmokit/]`，
+构建通过（lib/index.cjs 283KB + index.d.cts 19KB）。产物保留 koishi 生态 import 引用
+（消费端由 koishi 提供类型，符合 peer 单实例）。
 
 ### 待办
 1. **端到端联调收尾（最高优先）**：确认 koishi 控制台收到 QQ 消息 + 能回复。重点排查

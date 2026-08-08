@@ -23,15 +23,17 @@ describe("toKoishiElements", () => {
         expect(String(all[0])).toContain('id="all"');
     });
 
-    it("image → h.image（url 优先，path 兜底）", () => {
+    it("image → h('img')（koishi 标准元素；url 优先，path 兜底）", () => {
         const withUrl = toKoishiElements(
             [{ type: "image", path: "/local/1.png", url: "https://x/1.png" }],
             h,
         );
         expect(String(withUrl[0])).toContain("https://x/1.png");
+        expect(String(withUrl[0])).toContain("<img");
 
         const pathOnly = toKoishiElements([{ type: "image", path: "/local/2.png" }], h);
         expect(String(pathOnly[0])).toContain("/local/2.png");
+        expect(String(pathOnly[0])).toContain("<img");
     });
 
     it("face → h('face', { id })", () => {

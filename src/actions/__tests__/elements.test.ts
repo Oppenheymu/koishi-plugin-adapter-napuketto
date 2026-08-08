@@ -58,13 +58,18 @@ describe("toCanonicalElements", () => {
         expect(toCanonicalElements([all])).toEqual([{ type: "at", target: "all" }]);
     });
 
-    it("image → path（本地路径）", () => {
+    it("img → path（koishi 标准图片元素）", () => {
+        const img = makeElement("img", { src: "C:/tmp/1.png" });
+        expect(toCanonicalElements([img])).toEqual([{ type: "image", path: "C:/tmp/1.png" }]);
+    });
+
+    it("image（旧写法）→ path 兼容", () => {
         const img = makeElement("image", { src: "C:/tmp/1.png" });
         expect(toCanonicalElements([img])).toEqual([{ type: "image", path: "C:/tmp/1.png" }]);
     });
 
-    it("image URL → 降级 text（需下载后发送）", () => {
-        const img = makeElement("image", { src: "https://x/1.png" });
+    it("img URL → 降级 text（需下载后发送）", () => {
+        const img = makeElement("img", { src: "https://x/1.png" });
         expect(toCanonicalElements([img])).toEqual([
             { type: "text", text: "[图片: https://x/1.png]" },
         ]);
