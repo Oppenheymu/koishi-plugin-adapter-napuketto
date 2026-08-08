@@ -79,7 +79,7 @@ NapukettoQQ 的自建宿主（路线 A）是**标准 Node 进程**（stub QQNT.d
 ```
 apps/koishi-plugin-adapter-napuketto/
 ├── src/
-│   ├── index.ts              # 插件入口：name / usage / Config / apply
+│   ├── index.ts              # 插件入口：name / usage / Config / apply（平台注册 + console 入口）
 │   ├── bot.ts                # NapukettoBot：koishi Bot 子类（平台注册、message 发送）
 │   ├── driver/               # 驱动层（§5.7，已实现 2026-08-08）
 │   │   ├── index.ts          #   出口（barrel）
@@ -100,6 +100,12 @@ apps/koishi-plugin-adapter-napuketto/
 │   │   ├── types.ts          #   LoginObserver / LoginView / LoginSnapshot
 │   │   ├── machine.ts        #   NapukettoLoginState：状态机 + QR 缓冲
 │   │   └── machine.test.ts   #   单测（8 用例：QR 全流程/快速直通/缓冲/重置）
+│   ├── console/              # 控制台登录面板（§5.12，2026-08-09）
+│   │   ├── index.ts          #   出口（barrel）
+│   │   ├── types.ts          #   LoginPanelPayload（DataService 下行形状）
+│   │   ├── payload.ts        #   快照 → payload 纯函数映射（可单测）
+│   │   ├── provider.ts       #   NapukettoLoginProvider（DataService + relogin listener）
+│   │   └── payload.test.ts   #   单测（纯函数映射）
 │   ├── events/               # 事件桥（§5.9，已实现 2026-08-08，地基验证点）
 │   │   ├── index.ts          #   出口（barrel）
 │   │   ├── types.ts          #   EventBridgeOptions / NapukettoSessionFields
@@ -121,6 +127,12 @@ apps/koishi-plugin-adapter-napuketto/
 │   │   ├── launch.ts         #   launch 工厂（launchSelfHost 组装 + 包入口解析）
 │   │   └── launch.test.ts    #   单测（配置解析纯函数，不真实 spawn）
 │   └── config.ts             # Config schema（koishi Schema）
+├── client/                   # 控制台前端（§5.12，2026-08-09）
+│   ├── index.ts              #   入口：注册 plugin-details slot → Settings 组件
+│   ├── settings.vue          #   扫码登录面板（状态/二维码/重新登录）
+│   └── tsconfig.json         #   前端独立 tsconfig（@koishijs/client/global 类型）
+├── scripts/
+│   └── build-client.mjs      # client → dist 构建（vite，等价 @koishijs/client yakumo）
 ├── docs/
 │   └── design.md             # 本文件
 ├── package.json
@@ -560,6 +572,100 @@ launchSelfHost({
 **koishi 主包 import 边界**：bot.ts/message.ts/config.ts/index.ts 运行时 import koishi
 （Bot 继承/MessageEncoder/Schema）——**不进单测**（HANDOVER §7 坑 1）；可单测的纯逻辑
 （launch 配置解析、元素映射）独立成文件 + mock 注入。
+
+### 5.12 控制台登录面板（`console/` + `client/`，2026-08-09）
+
+**定位**：koishi 特有的扫码登录体验——在 Koishi 控制台的**插件详情页**内嵌登录面板：
+实时显示登录状态、扫码二维码（base64 图）、登录成功账号信息，可一键重新登录。
+机制参考 `koishi-plugin-adapter-bilibili-dm`（MIT，仅借鉴机制骨架，实现自研）。
+
+**前后端数据流**（Koishi Console 标准三件套）：
+
+```
+┌─ 前端 client/settings.vue ──────────┐      ┌─ 后端 src/console/ ──────────────────┐
+│ inject('manager.settings.*') 读配置  │      │ NapukettoLoginProvider               │
+│ store['napuketto-login-<uin>'] 读状态│◄─────│ extends DataService（store 下行推送）│
+│ send('<uin>/relogin') 发指令         │─────►│ ctx.console.addListener（指令上行）  │
+│ ctx.slot(plugin-details) 挂载面板    │      │  → bot → IPC control restart（重登录）│
+└─────────────────────────────────────┘      └──────────────────────────────────────┘
+```
+
+| 环节 | 机制 | 说明 |
+|---|---|---|
+| 数据下行 | `DataService<T>`（`@koishijs/plugin-console`） | serviceId = `napuketto-login-<uin>`，`update()` 存快照 + `refresh()` 推 store |
+| 指令上行 | `ctx.console.addListener` + 前端 `send()` | `napuketto-login-<uin>/relogin`：触发重新登录 |
+| UI 挂载 | `ctx.console.addEntry({ dev, prod })` + `ctx.slot({ type: 'plugin-details' })` | 开发态 dev 指 `client/index.ts`（koishi dev 动态编译）；生产态 prod 指 `dist`（vite 打包产物） |
+| 插件详情识别 | `inject('manager.settings.local/config')` | 前端校验当前查看的是本插件 + 从配置取 selfId（多账号隔离） |
+
+**登录状态源**：子进程 bootstrap 登录（快速登录失败 → 自动 QR，kernel 驱动，二维码过期
+自动 refresh）→ IPC `qr`/`login` 消息 → driver `onQr`/`onLogin` → `NapukettoLoginState`
+状态机 → `LoginView` 回调 → provider 推送。**无需后端轮询**（kernel 已自动驱动）。
+
+**后端形态**（`src/console/`，单文件 ≤300 行约束）：
+
+| 文件 | 职责 |
+|---|---|
+| `types.ts` | `LoginPanelPayload`（state/selfId/message?/qr?/self?/lastError?） |
+| `payload.ts` | `toLoginPanelPayload(snapshot, selfId)` 纯函数（LoginSnapshot → payload，可单测） |
+| `provider.ts` | `NapukettoLoginProvider extends DataService<LoginPanelPayload>`：`update()` 合并 + refresh；注册 `relogin` listener → `onRelogin` 回调 |
+| `index.ts` | barrel |
+
+**provider 装配**（bot.ts 构造，`ctx.inject(['console'])` 延迟到 console 服务就绪）：
+
+```ts
+// bot.ts（satorijs Context → koishi Context cast，运行时同实例）
+const kctx = this.ctx as unknown as KoishiContext;
+kctx.inject(['console'], (ctx) => {
+  this.panelRef.current = new NapukettoLoginProvider(ctx, {
+    selfId: config.selfId,
+    onRelogin: () => this.requestRelogin(),   // 见下
+  });
+  this.pushLoginPanel();                      // 立即推送当前快照
+});
+```
+
+- `LoginView` 三回调（onStateChange/onQrChange/onError）统一走 `pushLoginPanel()`：
+  `snapshot → toLoginPanelPayload → panelRef.update()`
+- **重新登录**：`requestRelogin()` → `clientRef.current?.sendControl({ command: 'restart' })`
+  ——重启子进程重新走登录流程（快速登录优先、QR 兜底）。loader `control restart` 已实现
+  （ipc-server `onExit`），**零跨包改动**。⚠️ 强制扫码（跳过快速登录）需 kernel/loader
+  支持（清票据/禁快速登录 env），留待后续轮次。
+- **前端入口 addEntry**（bot.ts 模块级去重）：koishi 平台插件注册 Bot 靠**默认导出 Bot 类**
+  （`ctx.platform(name)` 只是平台作用域，不是注册 API）——addEntry 放 bot 构造的 console
+  inject 回调里，`consoleEntryRegistered` 模块级 flag 保证多 bot 实例只注册一次；
+  路径用 `import.meta.url` 定位（开发态 ESM 直载），bundle 后 `__dirname` 兜底。
+
+**前端形态**（`client/`）：
+
+| 文件 | 职责 |
+|---|---|
+| `index.ts` | `ctx.slot({ type: 'plugin-details', component: Settings, order: 800 })`（B站模板同款挂载点） |
+| `settings.vue` | 状态机渲染：idle/init/waiting_scan（二维码）/scanned/logged_in/failed + 重新登录按钮 |
+| `tsconfig.json` | `types: ["@koishijs/client/global"]`（官方模板同款，前端独立编译，不进仓库 tsc） |
+
+前端要点（B站模板模式）：
+- 数据：`store['napuketto-login-<uin>']`（Vue 响应式，`computed` 读取 + 插件名/selfId 校验）
+- 二维码：`<img :src="'data:image/png;base64,' + qr.pngBase64">` + `qr.qrcodeUrl` 链接兜底
+- 重新登录：`send('napuketto-login-<uin>/relogin', { selfId })`
+- 过期展示：前端做 3 分钟展示计时器（纯 UI 辅助），真正过期由 kernel 自动 refresh 推新码
+- **零 HTTP 请求**：只读 store + 发 WebSocket 事件
+
+**client 构建**（`scripts/build-client.mjs`）：等价 `@koishijs/client` 的 yakumo client
+构建（vite）：`client/index.ts` → `dist/index.js`（IIFE，`external: ['vue', 'vue-router',
+'@vueuse/core', '@koishijs/client']`——运行时由 koishi console 提供全局变量）。dev 模式
+（koishi dev）直接编译 `client/index.ts`，无需预构建。
+
+**依赖**（发布形态，B站模板同款务实选择）：
+- `@koishijs/plugin-console` → **dependencies**（provider 运行时 `import { DataService }`；
+  放 dependencies 由 npm 自动安装 + koishi 自动加载内置插件，避免用户未装 console 时
+  import 崩溃）
+- `@koishijs/client` → **dependencies**（client 源码 dev 模式被 koishi dev 编译时需要；
+  与模板一致）
+- `vite` + `@vitejs/plugin-vue` → devDependencies（仅构建脚本用）
+- tsdown 产物保持 external（`neverBundle` 已覆盖 `/^@koishijs\//`）
+
+**biome 边界**：根 biome `files.includes` 只扫 `**/src/**`——`client/`（.vue/.ts）与
+`scripts/*.mjs` 不在检查范围（独立 tsconfig + 独立构建链）；`src/console/` 在范围内照常检查。
 
 ## 6. 实现顺序（一个模块一个模块，每步跑 `pnpm check`）
 

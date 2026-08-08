@@ -1,0 +1,14 @@
+{
+    "compilerOptions": {
+        "rootDir": ".",
+        "module": "esnext",
+        "moduleResolution": "node",
+        "types": [
+            // 导入前端全局类型（store/send/ctx.slot 等），编辑器代码提示用
+            "@koishijs/client/global",
+        ],
+    },
+    "include": [
+        "."
+    ],
+}

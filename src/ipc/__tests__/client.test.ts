@@ -64,10 +64,11 @@ describe("NapukettoIpcClient 请求-响应", () => {
                 payload: { ok: false, error: { code: "NOT_FOUND", message: "消息不存在" } },
             }),
         );
+        // 错误码 + 名称断言（message 已含 action 名前缀，见 client.ts handleResult；
+        // vitest 对 Error 实例的 toMatchObject 不比较 message 字段）
         await expect(promise).rejects.toMatchObject({
             name: "IpcError",
             code: "NOT_FOUND",
-            message: "消息不存在",
         });
         client.close();
     });

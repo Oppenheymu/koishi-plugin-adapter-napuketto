@@ -18,10 +18,13 @@
  * 只按 Bot 基类能力使用，无需 koishi 特有 API。
  */
 
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Context } from "@satorijs/core";
-import { Bot, h, type MessageEncoder, type Universal } from "koishi";
+import { Bot, h, type Context as KoishiContext, type MessageEncoder, type Universal } from "koishi";
 import { NapukettoInternal } from "../actions/index.js";
 import { type LogLevel, type NapukettoBotConfig, napukettoConfigSchema } from "../config.js";
+import { NapukettoLoginProvider, toLoginPanelPayload } from "../console/index.js";
 import { NapukettoDriver } from "../driver/index.js";
 import type { HFn } from "../events/elements.js";
 import { NapukettoEventBridge, type NapukettoSessionFields } from "../events/index.js";
@@ -46,6 +49,32 @@ const LOG_LEVEL_MAP: Record<LogLevel, number> = {
     silent: 0,
 };
 
+// ── 控制台前端入口（design.md §5.12，模块级去重：多 bot 实例只注册一次） ──
+
+let consoleEntryRegistered = false;
+
+/** 包根目录（开发态 ESM 直载：import.meta.url 定位；生产态 CJS bundle：__dirname 兜底）。 */
+function packageRoot(): string {
+    try {
+        return fileURLToPath(new URL("../..", import.meta.url));
+    } catch {
+        return resolve(__dirname, "..");
+    }
+}
+
+/** 注册控制台登录面板前端入口（dev 由 koishi dev 动态编译；prod 走 vite 产物 dist）。 */
+function registerConsoleEntry(ctx: KoishiContext): void {
+    if (consoleEntryRegistered) {
+        return;
+    }
+    consoleEntryRegistered = true;
+    const root = packageRoot();
+    ctx.console.addEntry({
+        dev: resolve(root, "client/index.ts"),
+        prod: resolve(root, "dist"),
+    });
+}
+
 /** NapukettoQQ 的 koishi Bot（平台 "napuketto"）。
  *
  * ⚠️ 不带泛型 C（2026-08-08 修复）：`C extends Context` 泛型在
@@ -66,6 +95,8 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
 
     /** 当前 IPC 客户端引用（driver 重启后换实例，onReady 更新）。 */
     private readonly clientRef: { current: NapukettoIpcClient | null } = { current: null };
+    /** 控制台登录面板 provider（console 服务就绪后装配；重启/重载前 null）。 */
+    private readonly panelRef: { current: NapukettoLoginProvider | null } = { current: null };
     private driver: NapukettoDriver | null = null;
     private readonly login: NapukettoLoginState;
     private readonly bridge: NapukettoEventBridge;
@@ -88,10 +119,28 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
                     this.user.name = self.nick;
                 }
                 this.logger.debug("[napuketto] 登录状态: %s", state);
+                this.pushLoginPanel();
+            },
+            onQrChange: (_qr) => {
+                this.logger.debug("[napuketto] 二维码更新");
+                this.pushLoginPanel();
             },
             onError: (error) => {
                 this.logger.warn("[napuketto] 登录错误: %o", error);
+                this.pushLoginPanel();
             },
+        });
+
+        // 控制台登录面板（console 服务就绪后装配；satorijs Context → koishi
+        // Context cast——运行时同一实例，仅类型收窄）。
+        (this.ctx as unknown as KoishiContext).inject(["console"], (ctx) => {
+            registerConsoleEntry(ctx);
+            this.panelRef.current = new NapukettoLoginProvider(ctx, {
+                selfId: config.selfId,
+                onRelogin: () => this.requestRelogin(),
+            });
+            // 装配完成立即推送当前快照（面板打开即有状态，不必等下次变化）
+            this.pushLoginPanel();
         });
 
         // 事件桥（构造时装配一次；dispatch/selfId 无状态转发，driver 重启不影响）
@@ -299,6 +348,26 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
         void this.getLogin().catch((error) => {
             this.logger.warn("[napuketto] 拉取登录信息失败: %o", error);
         });
+    }
+
+    /** 登录快照 → 控制台面板推送（provider 未装配时静默跳过）。 */
+    private pushLoginPanel(): void {
+        const provider = this.panelRef.current;
+        if (provider === null) {
+            return;
+        }
+        provider.update(toLoginPanelPayload(this.login.snapshot, this.config.selfId));
+    }
+
+    /** 重新登录：重启子进程重新走登录流程（快速登录优先、QR 兜底）。 */
+    private requestRelogin(): void {
+        const client = this.clientRef.current;
+        if (client !== null) {
+            this.logger.info("[napuketto] 控制台请求重新登录（重启子进程）");
+            client.sendControl({ command: "restart" });
+        } else {
+            this.logger.warn("[napuketto] 子进程未就绪，无法重新登录");
+        }
     }
 
     /** kernel 事件 session 字段 → koishi session → dispatch。 */

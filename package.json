@@ -17,7 +17,9 @@
         "./package.json": "./package.json"
     },
     "files": [
-        "lib"
+        "lib",
+        "client",
+        "dist"
     ],
     "license": "MIT",
     "publishConfig": {
@@ -39,7 +41,12 @@
     "scripts": {
         "dev": "tsdown --watch",
         "build": "tsdown",
+        "build:client": "node scripts/build-client.mjs",
         "check": "biome check . && tsc --noEmit"
+    },
+    "dependencies": {
+        "@koishijs/client": "^5.29.4",
+        "@koishijs/plugin-console": "^5.30.9"
     },
     "peerDependencies": {
         "koishi": "^4.18.7"
@@ -50,9 +57,11 @@
         "@napuketto/loader": "workspace:*",
         "@satorijs/core": "^4.6.0",
         "@types/node": "^26.1.2",
+        "@vitejs/plugin-vue": "^5.1.4",
         "koishi": "4.18.11",
         "tsdown": "^0.22.14",
         "typescript": "^7.0.2",
+        "vite": "^6.0.0",
         "vitest": "^4.1.10"
     },
     "koishi": {

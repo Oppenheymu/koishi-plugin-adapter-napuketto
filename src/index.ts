@@ -4,7 +4,9 @@
  * 默认导出 NapukettoBot（koishi Bot 子类）——koishi 自动 `ctx.platform('napuketto', ...)`
  * 注册平台，按用户 bots 配置（`bots: { 'napuketto:<uin>': {...} }`）实例化；
  * Bot 构造自动注册 `ctx.on('ready', () => this.start())` → start() spawn 自建宿主
- * 子进程（driver → IPC）→ 登录 → 事件桥/动作桥装配。
+ * 子进程（driver → IPC）→ 登录 → 事件桥/动作桥装配。控制台登录面板
+ * （design.md §5.12）在 bot 构造内装配（console 服务就绪后：DataService 推送 +
+ * addEntry 前端入口）。
  *
  * 运行时 import koishi（Session 声明扩展）——本文件不进单测（HANDOVER §7 坑 1）。
  */
@@ -23,7 +25,8 @@ export const usage = `
   <h2 style="margin-top: 0; color: #4a6ee0;">🖥️ NapukettoQQ 适配器</h2>
   <p>自研 QQ NT <strong>wrapper.node</strong> 协议层，无需 NapCat。</p>
   <p>每个 <code>bots</code> 配置项启动一个自建宿主子进程（dlopen wrapper.node + stub
-  QQNT.dll），经 IPC 与 koishi 通信。配置 <code>selfId</code> 为登录 QQ 号即可。</p>
+  QQNT.dll），经 IPC 与 koishi 通信。配置 <code>selfId</code> 为登录 QQ 号即可；
+  登录二维码在插件详情页实时展示（控制台安装后可见）。</p>
 </div>
 `;
 
