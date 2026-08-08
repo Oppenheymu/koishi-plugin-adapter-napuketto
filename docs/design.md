@@ -107,13 +107,19 @@ apps/koishi-plugin-adapter-napuketto/
 │   │   ├── adapt.ts          #   RawMessage → session 字段（群聊/私聊/临时会话）
 │   │   ├── bridge.ts         #   NapukettoEventBridge：kernel 事件 → dispatch
 │   │   └── *.test.ts         #   单测（17 用例，mock h 注入不依赖 koishi 运行时）
-│   ├── actions/              # 动作桥（§5.10，实现顺序第 5 步）
+│   ├── actions/              # 动作桥（§5.10，已实现 2026-08-08）
 │   │   ├── index.ts          #   出口（barrel）
 │   │   ├── types.ts          #   RequestFn 传输抽象 / NapukettoInternalOptions / PeerTarget
 │   │   ├── elements.ts       #   koishi 元素 → canonical（反向映射，纯函数）
 │   │   ├── channel.ts        #   channelId → Peer 参数（群聊/私聊/临时会话，纯函数）
 │   │   ├── internal.ts       #   NapukettoInternal：koishi bot.internal 封装
 │   │   └── *.test.ts         #   单测（mock request 注入，不依赖 koishi 运行时）
+│   ├── bot/                  # Bot 集成（§5.11，已实现 2026-08-08，**端到端验证点**）
+│   │   ├── index.ts          #   出口（barrel）
+│   │   ├── bot.ts            #   NapukettoBot：koishi Bot 子类（平台注册、装配、动作方法）
+│   │   ├── message.ts        #   NapukettoMessageEncoder：koishi 元素 → internal.sendMessage
+│   │   ├── launch.ts         #   launch 工厂（launchSelfHost 组装 + 包入口解析）
+│   │   └── launch.test.ts    #   单测（配置解析纯函数，不真实 spawn）
 │   └── config.ts             # Config schema（koishi Schema）
 ├── docs/
 │   └── design.md             # 本文件
@@ -459,6 +465,95 @@ uid**——注入 groupApi.uinToUid）：
 
 **可单测**：`elements.ts` / `channel.ts` 纯函数直测；`internal.ts` 注入 mock request
 （`vi.fn`）断言动作名 + params。koishi 主包不 import（HANDOVER §7 坑 1），类型宽松结构。
+
+### 5.11 Bot 集成细节（`bot.ts`，实现顺序第 6 步，**端到端验证点**）
+
+**定位**：`NapukettoBot extends Bot` 注册为 koishi 平台，把 §5.2~§5.10 全部装配起来。
+**验证点：koishi 控制台收到消息 + 能回复**（事件桥 + 动作桥端到端）。
+
+**形态**：`src/bot/` 目录（单文件 ≤300 行约束）：
+
+| 文件 | 职责 |
+|---|---|
+| `bot.ts` | `NapukettoBot extends Bot`：平台注册、driver 装配、动作方法 |
+| `message.ts` | `NapukettoMessageEncoder extends MessageEncoder`（元素收集 → internal.sendMessage） |
+| `launch.ts` | launch 工厂（launchSelfHost 组装 + 包入口解析，纯函数可单测） |
+| `index.ts` | barrel |
+
+**装配方式（关键决策）**：**不写 Adapter**（fork/connect 抽象为 HTTP/WS 网络服务设计）。
+koishi `Bot` 构造自动注册 `ctx.on('ready', () => this.start())`——直接 override `start()`
+spawn driver，`stop()` 停 driver。与 driver 的进程编排模式同构，少一层抽象。
+
+```
+koishi 框架（bots 配置实例化）
+  └─ NapukettoBot(ctx, config)
+       ├─ internal = NapukettoInternal({ request: clientRef 绑定 })   // 动作桥
+       ├─ login = NapukettoLoginState()                                // 登录交互
+       ├─ start() → NapukettoDriver({ launch: buildLaunch(config) })  // 进程编排
+       │    └─ events.onReady → clientRef 更新 + 事件桥重建 + online()
+       └─ 动作方法 → internal（sendMessage 走 static MessageEncoder）
+```
+
+**生命周期**：
+
+| 钩子 | 行为 |
+|---|---|
+| `constructor` | `super(ctx, config, 'napuketto')`；`selfId = config.selfId`（koishi `defineAccessor` 写 user.id）；internal/login 实例化；user.avatar 用 q.qlogo.cn（napcat 同款） |
+| `start()` | `status = CONNECT` → 建 driver（launch 工厂）→ `driver.start()`；异常 `offline(error)` |
+| driver `onReady` | `clientRef.current = driver.currentClient`；`login.onReady()`；重建事件桥（client 换实例）；`online()`；`getLogin()` 更新 user |
+| driver `onExit` | `login.onExit()`（登录状态归 idle）；非 stop 时 `offline()` |
+| driver `onError` | 记日志；重启达上限时 `offline(error)` |
+| `stop()` | `driver.stop()` → `super.stop()`（offline） |
+| `dispose()` | Bot 基类：从 ctx.bots 移除 + `stop()`（ctx dispose 自动） |
+
+**动作方法**（走 `this.internal`，loader 动作表已就绪 §7）：
+
+| koishi 动作 | internal | 备注 |
+|---|---|---|
+| `createDirectChannel(userId)` | — | 返回 `{ id: 'private:' + userId, type: DIRECT }`（napcat 同款） |
+| `getMessageList(channelId, next?, dir?, limit?)` | `getMessageList` | 返回 `{ data, next }` |
+| `deleteMessage(channelId, messageId)` | `deleteMessage` | |
+| `getLogin()` | `getSelf` | 填 user → `toJSON()`（initialize 用） |
+| `getFriendList()` | `getFriendList` | 转 `Universal.Friend` 形状 |
+| `getGuildList()` | `getGroupList` | 转 `Universal.Guild` 形状 |
+
+**MessageEncoder**（`message.ts`）：koishi `Bot.createMessage` 用 `static MessageEncoder`
+实例化 → `send(content)` → `prepare()`（channel.type 补全）+ `render()`（逐个 `visit`）
++ `flush()`。visit 收到的 element 是 **h 实例**（text 内容在 `attrs.content`！napcat 实证）：
+攒进数组，`flush()` 一次性 `internal.sendMessage(channelId, collected, guildId)` →
+`session.app.emit('send')`。元素到 canonical 的转换复用 actions/elements.ts
+（`toCanonicalElements` 宽松结构吃 h 实例，`attrs.content`/`attrs.id`/`attrs.src`）。
+
+**launch 工厂**（`launch.ts`）：组装 `launchSelfHost`（参考 cli boot.ts）：
+
+```ts
+launchSelfHost({
+  qq: resolveQqInstall(config.qqPath),           // loader
+  kernelEntry: resolveEntry('@napuketto/kernel', config.kernelEntry),
+  cfgDir: join(dataRoot, config.selfId),
+  configPath: resolveConfigPath({ dataRoot }),   // kernel
+  cwd: dataRoot,
+  selfHost: true,
+  ipc: true,
+  stdio: ['pipe', 'pipe', 'pipe'],
+  quickUin: config.selfId,
+  stubDir: config.stubDir ?? defaultStubDir(),
+})
+```
+
+- `resolveEntry(pkg, override)`：override 优先；否则 `import.meta.resolve`（开发态 workspace
+  包已 build；生产 bundle 态需 config 覆盖，HANDOVER 记录发布形态问题）
+- **IPC 模式不传 adapterEntry/networkEntry**（loader ipc-bootstrap 只用 kernel services）
+- 纯函数抽离（`resolveLaunchOptions(config)`）可单测；launchSelfHost 真实 spawn 不测
+
+**⚠️ 发布形态（记录，本轮不解决）**：`@napuketto/*` 被 bundle 进产物后 `import.meta.resolve`
+失效、`launchSelfHost` 内部 `__dirname` 定位 self-host.cjs 也失效（bundle 内联）。本轮目标
+= **开发态端到端验证**（exports.development 直载 src + workspace 包已 build）。生产发布需
+改依赖形态（external + dependencies）或打包 self-host 资源，收尾步骤 7 处理。
+
+**koishi 主包 import 边界**：bot.ts/message.ts/config.ts/index.ts 运行时 import koishi
+（Bot 继承/MessageEncoder/Schema）——**不进单测**（HANDOVER §7 坑 1）；可单测的纯逻辑
+（launch 配置解析、元素映射）独立成文件 + mock 注入。
 
 ## 6. 实现顺序（一个模块一个模块，每步跑 `pnpm check`）
 

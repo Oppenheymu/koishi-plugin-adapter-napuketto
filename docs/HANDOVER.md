@@ -33,11 +33,11 @@ koishi 插件（本包）                    Napuketto 子进程（self-host.cjs
 | 3 | `src/login/` 登录交互层 | ✅ | 6e1efbf | 状态机/QR 缓冲，8 单测 |
 | 4 | `src/events/` 事件桥 | ✅ | 31f3504 | **地基验证点**，17 单测 |
 | 5 | `src/actions/` 动作桥 | ✅ | 801067b | koishi 动作 → IPC action，27 单测 |
-| 6 | `src/bot.ts` Bot 集成 | ⏳ **下一步** | — | NapukettoBot 注册 koishi 平台 |
-| 7 | 收尾（多账号/文档/发布） | ⏳ | — | changesets + koishi 市场 |
+| 6 | `src/bot/` Bot 集成 | ✅ | <新提交> | **端到端验证点**，NapukettoBot + MessageEncoder + launch |
+| 7 | 收尾（多账号/文档/发布） | ⏳ **下一步** | — | 端到端联调 + changesets + koishi 市场 |
 
-**子仓库 HEAD = `801067b`（动作桥）**，工作区干净；主仓库 HEAD = `c4d2dff`（submodule 指针），
-领先 origin 3 提交（未 push）。**新会话第一件事：把两个仓库 push 到 origin**（或先继续施工再一起推）。
+**子仓库 HEAD = <新提交>（Bot 集成）**，工作区干净；主仓库 HEAD 待更新（submodule 指针）。
+**新会话第一件事：push 两个仓库到 origin**（子仓库 + 主仓库各领先 origin 若干提交）。
 
 ## 3. 已实现模块速览（新会话必读）
 
@@ -89,6 +89,30 @@ koishi 插件（本包）                    Napuketto 子进程（self-host.cjs
 - 测试：mock request（`vi.fn`）断言动作名 + params，27 单测（elements 12 + channel 4 + internal 11）
 - 载荷经 IPC `client.request` 到 loader 侧动作表（`msg.sendMessage` 等，peerUin 自动转 uid）
 
+### 3.6 `src/bot/`（Bot 集成，端到端验证点）
+- `bot.ts`：`NapukettoBot extends Bot`（平台 "napuketto"，**不写 Adapter**——override `start()`
+  spawn driver / `stop()` 停 driver，koishi 构造自动注册 ready → start）
+  - 构造：selfId → user.id；internal = `NapukettoInternal`（request 绑定 `clientRef`，null 抛错）；
+    bridge = `NapukettoEventBridge`（dispatch → `this.dispatchSession`，h 用 `adaptH` 适配）
+  - 动作方法：createDirectChannel / getMessageList / deleteMessage / getLogin / getFriendList /
+    getGuildList / getGuild / getChannel（走 internal → IPC action）
+  - 生命周期：start → driver 装配（launch 工厂 + events 接线）→ onReady（clientRef 更新 +
+    login.onReady + online + getLogin）→ onExit（login 归 idle + offline）/ onError（offline）
+  - `namespace NapukettoBot { export const Config }`（napcat 同构，koishi bots 配置校验）
+- `message.ts`：`NapukettoMessageEncoder extends MessageEncoder`——prepare（channel.type 补全）+
+  visit（收集 h 实例）+ flush（一次性 `internal.sendMessage(channelId, children, guildId)` →
+  session 'send' 事件）；元素 → canonical 复用 actions/elements.ts
+- `launch.ts`：`resolveEntry`（override 优先，否则 import.meta.resolve）+ `resolveLaunchOptions`
+  （纯函数，组装 launchSelfHost 选项：IPC + selfHost + pipe stdio + quickUin= selfId；deps 注入
+  假 QQ 解析可单测）+ `buildLaunch`（DriverLauncher，child cast 适配 ChildProcessLike）
+- `config.ts`：`NapukettoBotConfig`（selfId 必填 + qqPath/stubDir/dataDir/kernelEntry 覆盖 +
+  restart/heartbeatTimeoutMs）+ `napukettoConfigSchema`
+- `index.ts`：默认导出 `NapukettoBot`（koishi 自动注册平台）+ 导出 Config/actions/events
+- 测试：launch 纯函数 5 单测；bot/message/config/index 运行时 import koishi 不进单测
+- **⚠️ 发布形态（HANDOVER §5 记录）**：bundle 后 `import.meta.resolve` 失效（tsdown 警告
+  EMPTY_IMPORT_META）、launchSelfHost 的 `__dirname` 定位 self-host.cjs 失效——生产发布需
+  config 显式覆盖 kernelEntry 或改依赖形态（收尾步骤 7）
+
 ## 4. 主仓库前置（§7 已落地，勿重复）
 
 - **kernel**：`NTEventChannel.onAny`（全事件订阅）+ `CoreLoginOptions.onLoginProgress`
@@ -98,32 +122,32 @@ koishi 插件（本包）                    Napuketto 子进程（self-host.cjs
   `launcher.ts` `LaunchOptions.ipc` 注入 NAPUTO_IPC=1
 - **变化集**（主仓库 9005c43 + changeset `koishi-ipc-prereq.md`，kernel/loader patch）
 
-## 5. 下一步：Bot 集成 `src/bot.ts`（实现顺序第 6 步）
+## 5. 下一步：收尾（实现顺序第 7 步）
 
-### 设计要点（在 design.md §5.11 先补设计）
-- **目标**：`NapukettoBot extends Bot`（koishi 平台注册）——**端到端验证点：koishi 控制台
-  收到消息 + 能回复**。把 apply() 全面装配起来：driver + login + events + actions + bot。
-- **关键问题（先想清楚再动手）**：
-  1. **koishi 主包 import 边界**：`import { Bot } from "koishi"` 是运行时 import（单测崩溃，
-     HANDOVER §7 坑 1）——bot.ts 是否进单测？进的话需要把 Bot 基类也依赖注入（apply() 层
-     注入 Bot 类构造），只对可单测的纯逻辑（MessageEncoder 元素链路）写测试。
-  2. **`internal` 挂载**：`NapukettoBot.internal = new NapukettoInternal({ request })`——request
-     绑定 `client.request`（重启后 client 会换实例，onReady 时重建）。
-  3. **`MessageEncoder`**：koishi 元素发送链路（`forward()`/`flush()`/`prepare()`），最终调
-     `bot.internal.sendMessage(channelId, elements)`。
-  4. **`initialize()`**：`getLogin()` 拉 selfInfo → `online()`；失败 `offline(error)`。
-  5. **apply() 装配顺序**：spawn driver → onReady 里接 events（bridge）+ actions（internal 重建）
-     → bot 平台注册（`ctx.platform('napuketto', ...)`）。
-- **参考**：design.md §9.1 的 napcat/onebot Bot/MessageEncoder 骨架；`adaptSession` 模式
-  （session 字段我们已由 events/adapt.ts 产出，bot.ts 只做 Bot.dispatch 接线）。
+### 待办
+1. **端到端联调（最高优先）**：koishi 进程（NODE_ENV=development 直载 src + 主仓库各包
+   已 build）加载插件 → bots 配置 `napuketto:<uin>` → spawn self-host 子进程（IPC）→
+   快速登录（`quickUin`）→ READY → 控制台收到消息 + 能回复。这是「端到端验证点」的
+   最终确认——**当前所有模块是单测通过的组装件，联调会暴露真实集成问题**。
+2. **QR 登录展示**：`login.onQr`（pngBase64）→ koishi 控制台 <img>（LoginView 已定义，
+   bot.ts 尚未接 console）。
+3. **发布形态（⚠️ 已知问题）**：`@napuketto/*` 被 bundle 进产物后 `import.meta.resolve`
+   失效（tsdown EMPTY_IMPORT_META 警告实证）+ `launchSelfHost` 的 `__dirname` 定位
+   self-host.cjs 失效。选项：a) config 显式覆盖 kernelEntry/selfHostEntry；b) 改依赖形态
+   （@napuketto/* 移 dependencies + tsdown external）；c) 打包 self-host 资源进产物。
+   生产发布前必须解决。
+4. **多账号**：koishi bots 配置天然支持（每 bot 一个子进程，driver 事件闭包绑定 uin）——
+   联调验证即可。
+5. **changesets + koishi 市场**：确认 create-napukettoqq 的 CLI_VERSION 同步。
 
 ### 提示
-- events/adapt.ts 已产 koishi session 字段（type/channelId/guildId/userId/elements/content），
-  Bot 侧只需 `bot.session(event)` → 填字段 → `bot.dispatch(session)`。
-- actions/internal.ts 已就绪（sendMessage/deleteMessage/getMessageList/markAsRead/列表/self），
-  Bot 动作方法默认走 `this.internal.*`，无需重复实现。
-- 多账号：apply 按 config.accounts 遍历 spawn（每账号一子进程），driver 事件回调闭包绑定 uin。
-- config.ts schema 本轮一并做（koishi `Schema.object`，账号列表 + 连接参数）。
+- bot.ts 的 `static MessageEncoder` 用 `as unknown as new (bot: unknown, ...) => MessageEncoder<never, never>`
+  cast 豁免（koishi 基类 static 用 satorijs Bot<cordis.Context>，与 koishi Bot 逆变不兼容）。
+- `Universal.Channel.Type` / `Universal.Status` 是 const enum，verbatimModuleSyntax 下用数字字面量
+  （bot.ts 顶部 CHANNEL_TYPE/BOT_STATUS 常量）。
+- actions/elements.ts 的 text 元素取值：`attrs.content` 优先（koishi h text 内容在 attrs.content，
+  napcat 实证），children 兜底；br → '\n'。
+- 联调命令参考：koishi 启动后观察子进程 stdout（IPC 行）与 bot 状态（控制台）。
 
 ## 6. 后续轮次（实现顺序 §6）
 
@@ -164,4 +188,5 @@ pnpm -C c:\Dev\QQBot-Dev\NapukettoQQ check
 
 ---
 
-*交接完毕。下一会话从「§5 Bot 集成 src/bot.ts」开始，先补 design.md §5.11 设计，再实现。*
+*交接完毕。下一会话从「§5 收尾」开始：端到端联调（koishi 加载插件 → 子进程 IPC → 收发消息）
+优先，再处理发布形态。*

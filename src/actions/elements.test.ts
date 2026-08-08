@@ -38,6 +38,18 @@ describe("toCanonicalElements", () => {
         expect(toCanonicalElements([el])).toEqual([{ type: "text", text: "早上好" }]);
     });
 
+    it("text 元素 → attrs.content 优先（koishi 实证）", () => {
+        // koishi h('text', { content }) 内容在 attrs.content，children 为空
+        const el = makeElement("text", { content: "内容在 attrs" }, []);
+        expect(toCanonicalElements([el])).toEqual([{ type: "text", text: "内容在 attrs" }]);
+    });
+
+    it("br → 换行 text", () => {
+        expect(toCanonicalElements([makeElement("br", {})])).toEqual([
+            { type: "text", text: "\n" },
+        ]);
+    });
+
     it("at → target（all 原样）", () => {
         const at = makeElement("at", { id: "u_1" });
         expect(toCanonicalElements([at])).toEqual([{ type: "at", target: "u_1" }]);

@@ -50,7 +50,7 @@ function toKoishiElement(element: CanonicalElement, h: HFn): unknown {
 
 /** koishi h() 工厂适配（apply() 层用：koishi 的 `h` 包一层）。 */
 export function bindKoishiH(
-    koishiH: (type: string, attrs?: Record<string, unknown>, ...children: unknown[]) => unknown,
+    koishiH: (type: unknown, attrs?: unknown, ...children: unknown[]) => unknown,
 ): HFn {
     return (type, attrs, ...children) => {
         const element = koishiH(type, attrs, ...children) as {

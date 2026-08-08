@@ -3,7 +3,8 @@
  *
  * 与 events/elements.ts（canonical → koishi）对称的反向映射。koishi h() 元素
  * 宽松结构 { type, attrs, children }（不 import koishi 主包）：
- *  - text → { type: "text", text }（children 字符串 join）
+ *  - text → { type: "text", text }（attrs.content 优先，children join 兜底）
+ *  - br → { type: "text", text: "\n" }
  *  - at → { type: "at", target: attrs.id }（id="all" 原样）
  *  - image → { type: "image", path: attrs.src }（本地路径；URL 降级 text，需下载）
  *  - face → { type: "face", id: attrs.id }
@@ -57,8 +58,15 @@ function isLooseElement(value: unknown): value is LooseElement {
 function toCanonicalElement(element: LooseElement): CanonicalElement {
     const attrs = element.attrs ?? {};
     switch (element.type) {
-        case "text":
-            return { type: "text", text: element.children?.map(String).join("") ?? "" };
+        case "text": {
+            // koishi text 元素内容在 attrs.content（napcat 实证），children 兜底
+            const content = String(attrs["content"] ?? "");
+            const childrenText = element.children?.map(String).join("") ?? "";
+            const text = content !== "" ? content : childrenText;
+            return { type: "text", text };
+        }
+        case "br":
+            return { type: "text", text: "\n" };
         case "at": {
             const id = String(attrs["id"] ?? "");
             return id === ""
