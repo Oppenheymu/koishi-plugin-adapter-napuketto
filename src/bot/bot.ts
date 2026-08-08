@@ -9,8 +9,17 @@
  * session，dispatch）+ 动作桥（NapukettoInternal，koishi 动作 → IPC action）。
  *
  * 运行时 import koishi（Bot/Universal 等）——本文件不进单测（HANDOVER §7 坑 1）。
+ *
+ * ⚠️ Context 来源（2026-08-08 修复）：Bot 基类（satorijs）的泛型约束是
+ * satorijs/cordis 的 Context，而 koishi 的 Context（独立 interface，含
+ * [minato.Types] 泛型）在 exactOptionalPropertyTypes 下不满足该约束（逆变
+ * 不兼容，部分 TS 版本报 TS2344）。修复：用 `@satorijs/core` 的 Context
+ * （约束正主）——运行时传入的仍是 koishi.Context（其子类），类型层面
+ * 只按 Bot 基类能力使用，无需 koishi 特有 API。
  */
-import { Bot, type Context, h, type MessageEncoder, type Universal } from "koishi";
+
+import type { Context } from "@satorijs/core";
+import { Bot, h, type MessageEncoder, type Universal } from "koishi";
 import { NapukettoInternal } from "../actions/index.js";
 import { type NapukettoBotConfig, napukettoConfigSchema } from "../config.js";
 import { NapukettoDriver } from "../driver/index.js";
@@ -29,8 +38,14 @@ const PRIVATE_PREFIX = "private:";
 const CHANNEL_TYPE = { TEXT: 0, DIRECT: 1 } as const;
 const BOT_STATUS = { CONNECT: 2, DISCONNECT: 3 } as const;
 
-/** NapukettoQQ 的 koishi Bot（平台 "napuketto"）。 */
-export class NapukettoBot<C extends Context = Context> extends Bot<C, NapukettoBotConfig> {
+/** NapukettoQQ 的 koishi Bot（平台 "napuketto"）。
+ *
+ * ⚠️ 不带泛型 C（2026-08-08 修复）：`C extends Context` 泛型在
+ * exactOptionalPropertyTypes 下触发 koishi Context 与 satorijs/cordis Context 的
+ * 逆变不兼容（Database/C[unique symbol] 泛型），VS Code TS server 报 TS2344。
+ * 显式用 satorijs Context（Bot 约束正主）即可（运行时仍是 koishi.Context）。
+ */
+export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
     // koishi 基类 static 类型用 satorijs Bot<cordis.Context>，与 koishi Bot<koishi.Context>
     // 逆变不兼容（napcat 用 eslint 宽松，我们 cast 豁免——运行时是真实 encoder 类）。
     // bot 参数 unknown + 返回 never 泛型：构造签名与基类 static 兼容且不损失运行时行为。
@@ -47,7 +62,7 @@ export class NapukettoBot<C extends Context = Context> extends Bot<C, NapukettoB
     private readonly login: NapukettoLoginState;
     private readonly bridge: NapukettoEventBridge;
 
-    constructor(ctx: C, config: NapukettoBotConfig) {
+    constructor(ctx: Context, config: NapukettoBotConfig) {
         super(ctx, config, "napuketto");
         // selfId setter 写 user.id（satorijs defineAccessor），sid 立即可用
         this.selfId = config.selfId;
@@ -220,10 +235,16 @@ export class NapukettoBot<C extends Context = Context> extends Bot<C, NapukettoB
                 onStatus: (status) => {
                     this.logger.debug("[napuketto] 引导阶段: %s", status.phase);
                 },
-                onLogin: (payload) => this.login.onLogin(payload.state, payload.selfInfo),
+                onLogin: (payload) => {
+                    this.login.onLogin(payload.state, payload.selfInfo);
+                },
                 onQr: (qr) => this.login.onQr(qr),
-                onEvent: (payload) => this.bridge.handle(payload),
-                onReady: () => this.handleReady(),
+                onEvent: (payload) => {
+                    this.bridge.handle(payload);
+                },
+                onReady: () => {
+                    this.handleReady();
+                },
                 onExit: () => {
                     this.login.onExit();
                     // 非主动停止的退出 → offline（driver 内部会重启；达上限 onError）
