@@ -36,7 +36,7 @@ export function resolveEntry(pkg: string, override?: string): string {
         const message = err instanceof Error ? err.message : String(err);
         throw new Error(
             `无法解析 ${pkg} 入口: ${message}（开发态请先 build 主仓库各包；` +
-            `生产态请在 bot 配置指定 ${pkg} 入口路径）`,
+                `生产态请在 bot 配置指定 ${pkg} 入口路径）`,
         );
     }
 }
@@ -50,6 +50,7 @@ function resolvePath(p: string): string {
 export interface ResolvedLaunch {
     qq: QqInstallInfo;
     kernelEntry: string;
+    selfHostEntry?: string;
     cfgDir: string;
     cwd: string;
     configPath: string;
@@ -78,6 +79,7 @@ export function resolveLaunchOptions(
     return {
         qq,
         kernelEntry: resolveEntry("@napuketto/kernel", config.kernelEntry),
+        ...(config.selfHostEntry !== undefined ? { selfHostEntry: config.selfHostEntry } : {}),
         cfgDir,
         cwd: dataRoot,
         configPath: resolveConfigPath({ dataRoot }),
@@ -96,6 +98,9 @@ export function buildLaunch(config: NapukettoBotConfig): DriverLauncher {
         const { child } = launchSelfHost({
             qq: options.qq,
             kernelEntry: options.kernelEntry,
+            ...(options.selfHostEntry !== undefined
+                ? { selfHostEntry: options.selfHostEntry }
+                : {}),
             cfgDir: options.cfgDir,
             cwd: options.cwd,
             configPath: options.configPath,

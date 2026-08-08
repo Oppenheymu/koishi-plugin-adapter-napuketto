@@ -34,6 +34,8 @@ export interface NapukettoBotConfig {
     dataDir?: string;
     /** 主仓库包入口覆盖（发布/联调用；缺省 import.meta.resolve）。 */
     kernelEntry?: string;
+    /** 自建宿主入口覆盖（self-host.cjs；发布/联调用，bundle 后 __dirname 定位失效）。 */
+    selfHostEntry?: string;
     /** 心跳超时（毫秒，driver 默认 45s）。 */
     heartbeatTimeoutMs?: number;
     /** 子进程重启策略。 */
@@ -50,6 +52,9 @@ export const napukettoConfigSchema: Schema<NapukettoBotConfig> = Schema.object({
     dataDir: Schema.string().description("数据根目录（缺省自动解析）"),
     kernelEntry: Schema.string().description(
         "kernel 入口路径覆盖（发布/联调用；缺省 import.meta.resolve）",
+    ),
+    selfHostEntry: Schema.string().description(
+        "自建宿主入口路径覆盖（self-host.cjs；发布/联调用，bundle 后缺省定位失效）",
     ),
     heartbeatTimeoutMs: Schema.number()
         .description("子进程心跳超时（毫秒，默认 45000）")
