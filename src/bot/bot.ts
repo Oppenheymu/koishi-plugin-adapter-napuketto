@@ -25,6 +25,7 @@ import { Bot, h, type Context as KoishiContext, type MessageEncoder, type Univer
 import { NapukettoInternal } from "../actions/index.js";
 import { type LogLevel, type NapukettoBotConfig, napukettoConfigSchema } from "../config.js";
 import { NapukettoLoginProvider, toLoginPanelPayload } from "../console/index.js";
+import { NapukettoDatabase } from "../database/index.js";
 import { NapukettoDriver } from "../driver/index.js";
 import type { HFn } from "../events/elements.js";
 import { NapukettoEventBridge, type NapukettoSessionFields } from "../events/index.js";
@@ -100,6 +101,10 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
     private driver: NapukettoDriver | null = null;
     private readonly login: NapukettoLoginState;
     private readonly bridge: NapukettoEventBridge;
+    /** 数据库操作集中管理（design.md §5.13）：dispatch 前原子预热 channel。 */
+    private readonly database: NapukettoDatabase;
+    /** autoAssign 语义（构造时解析一次；koishi 默认 true）。 */
+    private readonly autoAssign: boolean;
 
     constructor(ctx: Context, config: NapukettoBotConfig) {
         super(ctx, config, "napuketto");
@@ -143,9 +148,22 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
             this.pushLoginPanel();
         });
 
+        // 数据库操作集中管理（design.md §5.13）：dispatch 前原子预热 channel，
+        // 消除 koishi get-or-create 并发撞唯一键。autoAssign 构造时解析一次——
+        // Computed<boolean> 函数形式（per-session 计算）无 session 无法求值，
+        // 默认 true（Schema 默认值一致，与 koishi 行为对齐）。
+        const koishiCtx = this.ctx as unknown as KoishiContext;
+        const rawAutoAssign = koishiCtx.config.autoAssign;
+        this.autoAssign = typeof rawAutoAssign === "function" ? true : (rawAutoAssign ?? true);
+        this.database = new NapukettoDatabase(koishiCtx);
+
         // 事件桥（构造时装配一次；dispatch/selfId 无状态转发，driver 重启不影响）
         this.bridge = new NapukettoEventBridge({
-            dispatch: (session) => this.dispatchSession(session),
+            // dispatch 异步化（2026-08-09）：先原子预热 channel 再派发；桥回调
+            // 同步面，显式 void 丢弃 promise（预热失败不阻断派发）
+            dispatch: (session) => {
+                void this.dispatchSession(session);
+            },
             selfId: () => this.login.snapshot.self?.uin ?? this.config.selfId,
             // koishi h 可调用（Element 工厂）；类型适配（宽松签名，规避逆变检查）
             h: adaptH(h),
@@ -371,7 +389,21 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
     }
 
     /** kernel 事件 session 字段 → koishi session → dispatch。 */
-    private dispatchSession(fields: NapukettoSessionFields): void {
+    private async dispatchSession(fields: NapukettoSessionFields): Promise<void> {
+        // ⚠️ 原子预热 channel（design.md §5.13）：koishi getChannel 是 check-then-act
+        //（SELECT → 未命中 INSERT），多条消息同 tick dispatch 时并发撞 (id, platform)
+        // 唯一键（2026-08-09 实测：同批 4 条 → 1 成功 + 3 次 UNIQUE constraint failed）。
+        // 预热后 koishi SELECT 必命中，永远走不到 createChannel。预热失败不阻断派发
+        //（koishi get-or-create 兜底）；autoAssign=false 保持 koishi 不落库语义。
+        if (this.autoAssign && fields.channelId !== undefined) {
+            await this.database.ensureChannel({
+                platform: fields.platform,
+                id: fields.channelId,
+                ...(fields.guildId !== undefined ? { guildId: fields.guildId } : {}),
+                // assignee 仅非空 selfId（koishi autoAssign 语义：空串不落库）
+                ...(fields.selfId !== "" ? { assignee: fields.selfId } : {}),
+            });
+        }
         const session = this.session({
             type: fields.type,
             // exactOptionalPropertyTypes：可选字段条件展开，不显式赋 undefined

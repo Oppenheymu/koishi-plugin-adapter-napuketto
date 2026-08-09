@@ -680,6 +680,46 @@ kctx.inject(['console'], (ctx) => {
 `pnpm check` = `biome check . && tsc --noEmit && tsc --noEmit -p client/tsconfig.json`；
 `src/console/` 在 biome 范围内照常检查。
 
+### 5.13 数据库操作集中管理（`database/`，2026-08-09）
+
+**背景**：插件此前无自有数据库操作——channel/user 落库全在 koishi 框架内部
+（`Session.getChannel`）。而 koishi 的 `getChannel` 是 check-then-act：
+
+```ts
+async getChannel(id, fields) {
+    const channel = await app.database.getChannel(platform, id, fields) // ① SELECT
+    if (channel) return channel
+    return app.database.createChannel(platform, id, { assignee, guildId, createdAt }) // ② INSERT
+}
+```
+
+多条消息同 tick dispatch（QQ 批量推送 + 群通知高频事件）时，各 session 的 ① 全部先于
+首个 ② 完成 → 多个 INSERT 撞 `(id, platform)` 唯一键（2026-08-09 实测：同批 4 条消息
+→ 1 成功 + 3 次 `UNIQUE constraint failed: channel.id, channel.platform`）。记录最终
+创建成功、后续 SELECT 命中不复发，纯日志噪音，但会刷屏且理论上有中断消息处理链风险。
+过滤系统占位消息（`senderUin="0"`，f6dd177）只能消除系统消息场景，真实消息批量到达
+仍会触发。
+
+**方案**：`NapukettoDatabase`（`src/database/index.ts`），dispatch 前原子预热 channel：
+
+- **两段式**：先 `get('channel', { id, platform }, ['id'])` 命中直接返回（绝大多数路径
+  零写入）；未命中才 `upsert('channel', row, ['id', 'platform'])`——minato upsert 是
+  `INSERT ... ON CONFLICT DO UPDATE`，**并发安全幂等，不抛错**。预热后 koishi 的
+  SELECT 必命中，永远走不到 createChannel，从根上消除竞态。
+- **createdAt 只随新行携带**：已存在行 upsert 只 merge assignee/guildId，不刷新
+  createdAt（两段式保证：命中即返回，只有并发 miss 的双 upsert 会覆盖 createdAt，
+  毫秒级可忽略）。
+- **per-channel 串行队列**：key = `platform:id`，同 channel 的 ensure 排队执行
+  （不同 channel 并行），保证同 channel 消息 dispatch 顺序与预热顺序一致。
+- **降级不阻断**：`ctx.database` 不可用或 upsert 失败 → 单次警告后跳过（koishi
+  get-or-create 兜底），**绝不阻塞消息 dispatch**。
+- **autoAssign 语义对齐**：`assignee = selfId`（koishi `autoAssign=true` 时的落库
+  行为）；`autoAssign=false`（构造时解析 `ctx.config.autoAssign`，函数形式默认 true）
+  时跳过预热，保持 koishi 不落库语义。
+
+**接线**：`bot.ts` 构造时装配（`this.database`），`dispatchSession` 变 async——先
+`await ensureChannel` 再 dispatch。
+
 ## 6. 实现顺序（一个模块一个模块，每步跑 `pnpm check`）
 
 > **设计先行**：每实现一个模块前，先在本文件补一节细节设计。
