@@ -480,7 +480,7 @@ uid**——注入 groupApi.uinToUid）：
 |---|---|---|
 | `text`（children join） | `{ type: "text", text }` | |
 | `at`（attrs.id） | `{ type: "at", target }` | `id="all"` 原样 |
-| `img`（attrs.src） | `{ type: "image", path }` | **koishi 标准元素是 img**（兼容旧 `image` 写法）；本地路径；**http(s) URL 降级 text**（需下载后发送，后续轮次） |
+| `img`（attrs.src） | `{ type: "image", path }` | **koishi 标准元素是 img**（兼容旧 `image` 写法）；本地路径；**http(s) URL 降级 text**（需下载后发送，后续轮次）；**file:// URL 先 `fileURLToPath` 再统一规范化**（见下） |
 | `face`（attrs.id） | `{ type: "face", id }` | |
 | `audio`（attrs.src） | `{ type: "voice", path }` | 本地路径；URL 降级 text |
 | `quote`（attrs.id） | `{ type: "reply", messageId }` | |
@@ -489,6 +489,13 @@ uid**——注入 groupApi.uinToUid）：
 字符串 content（koishi 允许 `sendMessage(channelId, "纯文本")`）→ 单 text 元素；
 空内容 → 空数组 → `sendMessage` 返回 `[]`（不发请求）。
 `getMessageList` 返回 `{ data: RawMessage[], next: 末条 msgId }`（koishi MessageList 形状）。
+
+**媒体路径规范化（2026-08-09 redposter 实证修复）**：`img`/`audio` 的本地路径
+统一走 `normalizeMediaPath`——Windows 反斜杠 → 正斜杠（`path.replace(/\\/g, "/")`），
+`file://` URL 先 `fileURLToPath` 再规范化。原因：wrapper.node 的 rich media 服务按
+URL 语义解析图片路径，透传 `C:\...` 反斜杠路径读不到文件，返回 `rich media transfer
+failed`（现象：发送方日志 `已缓存海报图片` 成功但 `msg.sendMessage` 失败）。正斜杠
+路径无此问题（Chromium/Electron 内部按 URL 处理路径）。
 
 **可单测**：`elements.ts` / `channel.ts` 纯函数直测；`internal.ts` 注入 mock request
 （`vi.fn`）断言动作名 + params。koishi 主包不 import（HANDOVER §7 坑 1），类型宽松结构。

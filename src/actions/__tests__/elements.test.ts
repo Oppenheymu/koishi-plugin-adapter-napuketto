@@ -80,21 +80,18 @@ describe("toCanonicalElements", () => {
         const img = makeElement("img", {
             src: "file:///C:/Dev/QQBot-Dev/koishi-dev/data/redseries/redposter/e15-789.jpg",
         });
-        expect(toCanonicalElements([img])).toEqual([
-            {
-                type: "image",
-                path: fileURLToPath(
-                    "file:///C:/Dev/QQBot-Dev/koishi-dev/data/redseries/redposter/e15-789.jpg",
-                ),
-            },
-        ]);
+        // fileURLToPath 在 Windows 返回反斜杠，mediaElement 再规范化为正斜杠
+        // （NT rich media 契约，2026-08-09 redposter 实证）
+        const expected = fileURLToPath(
+            "file:///C:/Dev/QQBot-Dev/koishi-dev/data/redseries/redposter/e15-789.jpg",
+        ).replace(/\\/g, "/");
+        expect(toCanonicalElements([img])).toEqual([{ type: "image", path: expected }]);
     });
 
-    it("audio file:// URL → 转真实本地路径", () => {
+    it("audio file:// URL → 转真实本地路径（反斜杠规范化）", () => {
         const audio = makeElement("audio", { src: "file:///C:/tmp/a.silk" });
-        expect(toCanonicalElements([audio])).toEqual([
-            { type: "voice", path: fileURLToPath("file:///C:/tmp/a.silk") },
-        ]);
+        const expected = fileURLToPath("file:///C:/tmp/a.silk").replace(/\\/g, "/");
+        expect(toCanonicalElements([audio])).toEqual([{ type: "voice", path: expected }]);
     });
 
     it("face → id", () => {

@@ -66,6 +66,11 @@ function takeId(attrs: Record<string, unknown>): string | null {
     return id === "" ? null : id;
 }
 
+/** 本地文件路径规范化：Windows 反斜杠 → 正斜杠（NT rich media 契约）。 */
+function normalizeMediaPath(path: string): string {
+    return path.replace(/\\/g, "/");
+}
+
 /** 媒体元素（img/image/audio）：src 空 → 原样文本；URL → 占位文本；本地路径 → canonical 媒体。 */
 function mediaElement(
     element: LooseElement,
@@ -80,14 +85,17 @@ function mediaElement(
     // file:// URL → 转真实本地路径（fileURLToPath），避免带协议前缀透传给
     // wrapper.node 导致 rich media transfer failed（redposter 实证）
     if (isFileUrl(src)) {
-        const local = fileURLToPath(src);
+        const local = normalizeMediaPath(fileURLToPath(src));
         return kind === "image" ? { type: "image", path: local } : { type: "voice", path: local };
     }
-    return isHttpUrl(src)
-        ? { type: "text", text: `[${label}: ${src}]` }
-        : kind === "image"
-          ? { type: "image", path: src }
-          : { type: "voice", path: src };
+    if (isHttpUrl(src)) {
+        return { type: "text", text: `[${label}: ${src}]` };
+    }
+    // 普通本地路径同样规范化（2026-08-09：redposter 实证 file:// 转路径后仍
+    // rich media transfer failed——Windows 反斜杠路径透传给 NT 读不到，
+    // 需统一转正斜杠；Electron/Chromium 内部按 URL 语义处理路径）
+    const local = normalizeMediaPath(src);
+    return kind === "image" ? { type: "image", path: local } : { type: "voice", path: local };
 }
 
 /** 元素类型 → 处理器（判别式映射表；未收录类型走默认降级 text）。 */
