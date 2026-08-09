@@ -42,7 +42,7 @@
         "dev": "tsdown --watch",
         "build": "tsdown",
         "build:client": "node scripts/build-client.mjs",
-        "check": "biome check . && tsc --noEmit"
+        "check": "biome check . && tsc --noEmit && tsc --noEmit -p client/tsconfig.json"
     },
     "dependencies": {
         "@koishijs/client": "^5.29.4",

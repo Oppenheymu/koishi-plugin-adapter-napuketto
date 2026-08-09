@@ -649,8 +649,10 @@ kctx.inject(['console'], (ctx) => {
 | 文件 | 职责 |
 |---|---|
 | `index.ts` | `ctx.slot({ type: 'plugin-details', component: Settings, order: 800 })`（B站模板同款挂载点） |
-| `settings.vue` | 状态机渲染：idle/init/waiting_scan（二维码）/scanned/logged_in/failed + 重新登录按钮 |
-| `tsconfig.json` | `types: ["@koishijs/client/global"]`（官方模板同款，前端独立编译，不进仓库 tsc） |
+| `settings.vue` | 状态机渲染：idle/waiting_scan（二维码）/scanned/logged_in/failed + 重新登录按钮；`LoginPanelData` 接口类型化（对齐后端 payload） |
+| `shims.d.ts` | `*.vue`/`*.yaml`/`*.yml` 模块声明（替代上游 `@koishijs/client/global`——其 5.30.11 exports 映射 bug） |
+| `koishijs-client.d.ts` | `@koishijs/client` 本地类型 shim（上游以 TS 源码发布，strict 下会暴露 122 条上游错误；paths 重定向隔离） |
+| `tsconfig.json` | strict 全家桶 + `moduleResolution: bundler` + `paths` 重定向；`types: []`（防 node 全局泄漏）；**已纳入包级 `pnpm check`** |
 
 前端要点（B站模板模式）：
 - 数据：`store['napuketto-login-<uin>']`（Vue 响应式，`computed` 读取 + 插件名/selfId 校验）
@@ -674,7 +676,9 @@ kctx.inject(['console'], (ctx) => {
 - tsdown 产物保持 external（`neverBundle` 已覆盖 `/^@koishijs\//`）
 
 **biome 边界**：根 biome `files.includes` 只扫 `**/src/**`——`client/`（.vue/.ts）与
-`scripts/*.mjs` 不在检查范围（独立 tsconfig + 独立构建链）；`src/console/` 在范围内照常检查。
+`scripts/*.mjs` 不在 biome 检查范围（独立构建链）；但 **`client/` 已纳入包级类型门禁**：
+`pnpm check` = `biome check . && tsc --noEmit && tsc --noEmit -p client/tsconfig.json`；
+`src/console/` 在 biome 范围内照常检查。
 
 ## 6. 实现顺序（一个模块一个模块，每步跑 `pnpm check`）
 
@@ -804,3 +808,4 @@ adaptSession 骨架可几乎原样借鉴**（除元素格式：它们用 CQ 码�
    http，可能不需要 inject（除非用到 koishi 内置服务）。
 6. **`MessageEncoder`**：`forward()`（合并转发）、`flush()`（内容拼接）、`prepare()`
    （channel 类型补全）——发送链路的标准骨架。
+

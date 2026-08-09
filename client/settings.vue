@@ -58,6 +58,20 @@
 import { send, store } from '@koishijs/client';
 import { computed, inject, ref, watch } from 'vue';
 
+/** 登录状态（对齐 kernel LoginState 与后端推送结构）。 */
+type LoginState = 'idle' | 'waiting_scan' | 'scanned' | 'logged_in' | 'failed';
+
+/** 后端推送的登录面板数据结构（store['napuketto-login-<uin>']）。 */
+interface LoginPanelData {
+  state: LoginState;
+  message?: string;
+  /** state=waiting_scan 时有。 */
+  qr?: { pngBase64: string; qrcodeUrl: string };
+  /** state=logged_in 时有。 */
+  self?: { nick: string; uin: string };
+  lastError?: string;
+}
+
 /** 插件名（package.json name，插件详情页校验用）。 */
 const PLUGIN_NAME = 'koishi-plugin-adapter-napuketto';
 /** DataService serviceId 前缀（与后端 src/console/provider.ts 对齐）。 */
@@ -71,7 +85,7 @@ const local = inject('manager.settings.local', ref({ name: '' }));
 const config = inject('manager.settings.config', ref({}));
 
 /** 后端推送的登录面板数据（store['napuketto-login-<uin>']，Vue 响应式）。 */
-const data = computed<Record<string, unknown> | null>(() =>
+const data = computed<LoginPanelData | null>(() =>
 {
   // 1. 校验当前插件名称匹配
   if (!local.value || local.value.name !== PLUGIN_NAME) return null;
@@ -83,16 +97,16 @@ const data = computed<Record<string, unknown> | null>(() =>
   // 4. 从全局 store 按 serviceId 取后端推送的数据
   const serviceData = (store as Record<string, unknown>)[`${SERVICE_PREFIX}-${selfId}`];
   return serviceData !== undefined && typeof serviceData === 'object'
-    ? (serviceData as Record<string, unknown>)
+    ? (serviceData as LoginPanelData)
     : null;
 });
 
 /** 二维码 data URI（pngBase64 → data:image/png;base64,...）。 */
 const qrSrc = computed(() =>
 {
-  const qr = data.value?.qr as { pngBase64?: string } | undefined;
-  if (!qr?.pngBase64) return '';
-  return `data:image/png;base64,${qr.pngBase64}`;
+  const pngBase64 = data.value?.qr?.pngBase64;
+  if (!pngBase64) return '';
+  return `data:image/png;base64,${pngBase64}`;
 });
 
 /** 二维码展示过期（3 分钟辅助 UI 计时器）。 */
