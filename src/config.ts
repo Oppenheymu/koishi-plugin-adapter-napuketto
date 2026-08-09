@@ -5,7 +5,7 @@
  *  - selfId：登录账号（QQ 号，必填，数据目录账号隔离 + 快速登录账号）
  *  - qqPath / stubDir：loader 引导参数（缺省自动探测/包内默认）
  *  - dataDir：数据根目录（缺省 kernel resolveDataRoot 默认）
- *  - kernelEntry 等：主仓库包入口覆盖（发布/联调用，见 launch.ts 发布形态说明）
+ *  - kernelEntry 等：包入口覆盖（高级项，缺省按 Node 解析规则从 dependencies 自动定位）
  *  - logLevel：日志等级（默认 debug——多点日志便于排查，用户可调低减少输出）
  *  - restart / heartbeatTimeoutMs：driver 重启策略与心跳超时
  *
@@ -36,9 +36,9 @@ export interface NapukettoBotConfig {
     stubDir?: string;
     /** 数据根目录（缺省 kernel resolveDataRoot 默认）。 */
     dataDir?: string;
-    /** 主仓库包入口覆盖（发布/联调用；缺省 import.meta.resolve）。 */
+    /** 包入口覆盖（高级项；缺省 createRequire 按 dependencies 自动定位）。 */
     kernelEntry?: string;
-    /** 自建宿主入口覆盖（self-host.cjs；发布/联调用，bundle 后 __dirname 定位失效）。 */
+    /** 自建宿主入口覆盖（高级项；缺省 loader 包内 dist/host/self-host.cjs）。 */
     selfHostEntry?: string;
     /** 心跳超时（毫秒，driver 默认 45s）。 */
     heartbeatTimeoutMs?: number;
@@ -57,10 +57,10 @@ export const napukettoConfigSchema: Schema<NapukettoBotConfig> = Schema.object({
     stubDir: Schema.string().description("stub QQNT.dll 目录（缺省 loader 包内默认）"),
     dataDir: Schema.string().description("数据根目录（缺省自动解析）"),
     kernelEntry: Schema.string().description(
-        "kernel 入口路径覆盖（发布/联调用；缺省 import.meta.resolve）",
+        "kernel 入口路径覆盖（高级项；缺省按 dependencies 自动解析）",
     ),
     selfHostEntry: Schema.string().description(
-        "自建宿主入口路径覆盖（self-host.cjs；发布/联调用，bundle 后缺省定位失效）",
+        "自建宿主入口路径覆盖（高级项；缺省 loader 包内默认）",
     ),
     heartbeatTimeoutMs: Schema.number()
         .description("子进程心跳超时（毫秒，默认 45000）")

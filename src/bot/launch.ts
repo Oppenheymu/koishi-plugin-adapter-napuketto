@@ -7,13 +7,15 @@
  * `resolveLaunchOptions` 为纯函数（不 spawn，可单测）；`buildLaunch` 返回
  * DriverLauncher（真实 spawn，由 driver 调用，不直接测）。
  *
- * ⚠️ 发布形态（HANDOVER 记录）：`@napuketto/*` 被 bundle 进产物后
- * `import.meta.resolve` 失效、`launchSelfHost` 内部 `__dirname` 定位
- * self-host.cjs 也失效。本轮目标 = 开发态端到端验证（workspace 包已 build）；
- * 生产发布需 config 显式覆盖入口路径或改依赖形态（收尾步骤 7）。
+ * ⚠️ 发布形态（2026-08-09 产品化）：`@napuketto/kernel` / `@napuketto/loader`
+ * 为 dependencies（真实安装，不 bundle）——子进程要的是磁盘真实文件
+ * （self-host.cjs / stub QQNT.dll / kernel 入口），bundle 后资产丢失。
+ * `resolveEntry` 用 `createRequire`（CJS 产物下 `import.meta.resolve` 被
+ * 替换成 `{}` 报错，见 HANDOVER §5）；`launchSelfHost` 内部 `__dirname`
+ * 定位 self-host.cjs 由 loader 包内 `files: ["dist", "native/..."]` 保证。
  */
+import { createRequire } from "node:module";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { resolveConfigPath, resolveDataRoot } from "@napuketto/kernel";
 import {
     defaultStubDir,
@@ -24,19 +26,27 @@ import {
 import type { NapukettoBotConfig } from "../config.js";
 import type { DriverLauncher, DriverLaunchResult } from "../driver/index.js";
 
-/** 解析包入口（override 优先；否则 import.meta.resolve，开发态 workspace 包已 build）。 */
+/**
+ * 解析包入口（override 优先；否则 createRequire.resolve——CJS 产物下
+ * `import.meta.resolve` 不可用，被 rolldown 替换成 `{}` 报
+ * `{}.resolve is not a function`）。
+ *
+ * 缺省解析依赖 `@napuketto/*` 为真实 dependencies（发布后 npm 安装到
+ * node_modules，createRequire 按 Node 标准解析规则查找）。
+ */
+const require = createRequire(import.meta.url);
+
 export function resolveEntry(pkg: string, override?: string): string {
     if (override !== undefined && override !== "") {
         return resolvePath(override);
     }
     try {
-        const url = import.meta.resolve(pkg);
-        return fileURLToPath(url);
+        return require.resolve(pkg);
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         throw new Error(
-            `无法解析 ${pkg} 入口: ${message}（开发态请先 build 主仓库各包；` +
-                `生产态请在 bot 配置指定 ${pkg} 入口路径）`,
+            `无法解析 ${pkg} 入口: ${message}（请确认 ${pkg} 依赖已安装；` +
+                `或手动指定 ${pkg} 入口路径）`,
         );
     }
 }
