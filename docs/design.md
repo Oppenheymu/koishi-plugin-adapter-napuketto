@@ -717,8 +717,32 @@ async getChannel(id, fields) {
   行为）；`autoAssign=false`（构造时解析 `ctx.config.autoAssign`，函数形式默认 true）
   时跳过预热，保持 koishi 不落库语义。
 
+**服务访问（2026-08-09 修订）**：cordis 的 `provide` 把服务注册在
+`ctx.root[symbols.internal]`，但 `resolveInject` 只查当前 ctx 自己的 internal——
+插件 scope 的 ctx 若自身 internal 为空对象会遮蔽 root 链，`ctx.database` 解析为
+undefined 并**每次访问都 emit `internal/warning`**（实测每条消息刷 `property
+database is not registered`）。修复：
+- `NapukettoDatabase` 构造时收 `ctx.root`（root 的 internal 一定含 database，且
+  `checkInject` 对 root 直接放行——root 无 plugin runtime，**不产生 warning**）；
+- `NapukettoBot` 声明 `static inject = { database: { required: false } }`
+  （optional 依赖，`internal/inject` 检查放行，双保险；不强制用户装数据库）。
+
+**用户预热（ensureUser，2026-08-09）**：binding 冲突（`UNIQUE constraint failed:
+binding.pid, binding.platform`）与 channel 冲突**同源**——`session.getUser` 也是
+check-then-act，未命中走 `createUser` → `create('binding')` 撞 `(pid, platform)`
+主键（即 issue #1545 的 user 侧表现）。预热：
+- 先 `get('binding', { platform, pid }, ['aid'])` 命中直返；
+- 未命中 → `create('user', { authority, locales: [], createdAt })` 拿 `user.id` →
+  `upsert('binding', [{ aid, bid, pid, platform }], ['pid', 'platform'])` 幂等合并
+  （user 表无唯一键、重复创建无害，binding 由 upsert 保证并发安全）；
+- **autoAuthorize 语义**：构造时解析 `ctx.config.autoAuthorize`（函数形式默认 1）；
+  `autoAuthorize=0` 时 koishi 不落库（detached user）→ 跳过预热。
+- 不写 user 表 platform 列（`createUser` 依赖 login-added 迁移后才有的列；binding
+  映射已足够，`getUser` 经 binding.aid 查 user，无需该列）。
+- per-user 串行队列：key 前缀区分 `channel:` / `user:`（同 key 串行、异 key 并行）。
+
 **接线**：`bot.ts` 构造时装配（`this.database`），`dispatchSession` 变 async——先
-`await ensureChannel` 再 dispatch。
+`await ensureChannel` 再 `await ensureUser` 最后 dispatch。
 
 ## 6. 实现顺序（一个模块一个模块，每步跑 `pnpm check`）
 

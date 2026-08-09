@@ -94,6 +94,12 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
         options?: unknown,
     ) => MessageEncoder<never, never>;
 
+    // ⚠️ 声明 optional 数据库依赖（2026-08-09）：cordis 对未注册/未声明 inject 的
+    // 服务访问 emit `internal/warning`（实测每条消息刷 `property database is not
+    // registered`）。optional 声明不强制依赖（用户没装数据库插件也能跑，只是不
+    // 预热）；配合 NapukettoDatabase 内部收 root ctx 双保险（design.md §5.13）。
+    static inject = { database: { required: false } };
+
     /** 当前 IPC 客户端引用（driver 重启后换实例，onReady 更新）。 */
     private readonly clientRef: { current: NapukettoIpcClient | null } = { current: null };
     /** 控制台登录面板 provider（console 服务就绪后装配；重启/重载前 null）。 */
@@ -101,10 +107,12 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
     private driver: NapukettoDriver | null = null;
     private readonly login: NapukettoLoginState;
     private readonly bridge: NapukettoEventBridge;
-    /** 数据库操作集中管理（design.md §5.13）：dispatch 前原子预热 channel。 */
+    /** 数据库操作集中管理（design.md §5.13）：dispatch 前原子预热 channel/user。 */
     private readonly database: NapukettoDatabase;
     /** autoAssign 语义（构造时解析一次；koishi 默认 true）。 */
     private readonly autoAssign: boolean;
+    /** autoAuthorize 语义（构造时解析一次；koishi 默认 1，0 = 不落库）。 */
+    private readonly autoAuthorize: number;
 
     constructor(ctx: Context, config: NapukettoBotConfig) {
         super(ctx, config, "napuketto");
@@ -148,13 +156,15 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
             this.pushLoginPanel();
         });
 
-        // 数据库操作集中管理（design.md §5.13）：dispatch 前原子预热 channel，
-        // 消除 koishi get-or-create 并发撞唯一键。autoAssign 构造时解析一次——
-        // Computed<boolean> 函数形式（per-session 计算）无 session 无法求值，
-        // 默认 true（Schema 默认值一致，与 koishi 行为对齐）。
+        // 数据库操作集中管理（design.md §5.13）：dispatch 前原子预热 channel/user，
+        // 消除 koishi get-or-create 并发撞唯一键（channel 与 binding 同源，issue
+        // #1545）。autoAssign/autoAuthorize 构造时解析一次——Computed 函数形式
+        // （per-session 计算）无 session 无法求值，取 Schema 默认值（true / 1）。
         const koishiCtx = this.ctx as unknown as KoishiContext;
         const rawAutoAssign = koishiCtx.config.autoAssign;
         this.autoAssign = typeof rawAutoAssign === "function" ? true : (rawAutoAssign ?? true);
+        const rawAutoAuthorize = koishiCtx.config.autoAuthorize;
+        this.autoAuthorize = typeof rawAutoAuthorize === "function" ? 1 : (rawAutoAuthorize ?? 1);
         this.database = new NapukettoDatabase(koishiCtx);
 
         // 事件桥（构造时装配一次；dispatch/selfId 无状态转发，driver 重启不影响）
@@ -403,6 +413,17 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
                 ...(fields.guildId !== undefined ? { guildId: fields.guildId } : {}),
                 // assignee 仅非空 selfId（koishi autoAssign 语义：空串不落库）
                 ...(fields.selfId !== "" ? { assignee: fields.selfId } : {}),
+            });
+        }
+        // ⚠️ 原子预热 user（2026-08-09）：session.getUser 同样 check-then-act，未命中
+        // createUser → create('binding') 撞 (pid, platform) 主键（与 channel 冲突同源，
+        // issue #1545 user 侧）。binding 预热后 koishi getUser 必命中。userId 缺省
+        //（如系统事件）跳过；autoAuthorize=0 时 koishi 不落库，ensureUser 内部跳过。
+        if (fields.userId !== undefined && fields.userId !== "") {
+            await this.database.ensureUser({
+                platform: fields.platform,
+                userId: fields.userId,
+                authority: this.autoAuthorize,
             });
         }
         const session = this.session({
