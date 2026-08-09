@@ -392,9 +392,10 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
     private async dispatchSession(fields: NapukettoSessionFields): Promise<void> {
         // ⚠️ 原子预热 channel（design.md §5.13）：koishi getChannel 是 check-then-act
         //（SELECT → 未命中 INSERT），多条消息同 tick dispatch 时并发撞 (id, platform)
-        // 唯一键（2026-08-09 实测：同批 4 条 → 1 成功 + 3 次 UNIQUE constraint failed）。
-        // 预热后 koishi SELECT 必命中，永远走不到 createChannel。预热失败不阻断派发
-        //（koishi get-or-create 兜底）；autoAssign=false 保持 koishi 不落库语义。
+        // 唯一键（2026-08-09 实测：同批 4 条 → 1 成功 + 3 次 UNIQUE constraint failed；
+        // 框架侧根因见 koishijs/koishi#1545）。预热后 koishi SELECT 必命中，永远走不到
+        // createChannel。预热失败不阻断派发（koishi get-or-create 兜底）；
+        // autoAssign=false 保持 koishi 不落库语义。
         if (this.autoAssign && fields.channelId !== undefined) {
             await this.database.ensureChannel({
                 platform: fields.platform,

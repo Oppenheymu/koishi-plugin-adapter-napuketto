@@ -43,7 +43,8 @@ export class NapukettoEventBridge implements EventBridge {
             // get-or-create channel，多条同 tick 时撞 koishi get-or-create 的
             // 并发竞态——实测同批 4 条 → 1 成功 + 3 次 `UNIQUE constraint
             // failed: channel.id, channel.platform`（记录本身创建成功后续不复发，
-            // 纯日志噪音，但无意义）。
+            // 纯日志噪音，但无意义；框架侧根因见 koishijs/koishi#1545，真实消息
+            // 批量到达的场景由 database 模块预热规避）。
             if (raw.senderUin === SYSTEM_SENDER_UIN) {
                 continue;
             }

@@ -13,6 +13,9 @@
  * （INSERT ... ON CONFLICT DO UPDATE，并发安全幂等不抛错）。预热后 koishi 的
  * getChannel SELECT 必命中，永远走不到 createChannel——从根上消除竞态。
  * 预热失败只单次告警不阻断消息（koishi get-or-create 兜底）。
+ *
+ * ⚠️ 框架侧根因已上报：koishijs/koishi#1545（getChannel check-then-act 无原子性）；
+ * 本模块为插件侧临时规避（根治待框架修复，届时本模块可降级/移除）。
  */
 
 import type { Context } from "koishi";
