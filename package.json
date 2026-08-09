@@ -1,6 +1,6 @@
 {
     "name": "koishi-plugin-adapter-napuketto",
-    "version": "0.0.4",
+    "version": "0.0.5",
     "description": "NapukettoQQ内嵌到Koishi的适配器：让Koishi直接驱动NapukettoQQ",
     "contributors": [
         "Oppenheymu <oppenheymu@gmail.com>"
@@ -47,8 +47,8 @@
     "dependencies": {
         "@koishijs/client": "^5.29.4",
         "@koishijs/plugin-console": "^5.30.9",
-        "@napuketto/kernel": "workspace:~",
-        "@napuketto/loader": "workspace:~"
+        "@napuketto/kernel": "~0.0.3",
+        "@napuketto/loader": "~0.0.6"
     },
     "peerDependencies": {
         "koishi": "^4.18.7"
