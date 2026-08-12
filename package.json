@@ -47,8 +47,8 @@
     "dependencies": {
         "@koishijs/client": "^5.29.4",
         "@koishijs/plugin-console": "^5.30.9",
-        "@napuketto/kernel": "~0.0.5",
-        "@napuketto/loader": "~0.0.7"
+        "@napuketto/kernel": "~0.0.6",
+        "@napuketto/loader": "~0.0.8"
     },
     "peerDependencies": {
         "koishi": "^4.18.7"
