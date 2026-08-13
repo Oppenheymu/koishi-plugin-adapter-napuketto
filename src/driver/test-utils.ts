@@ -67,7 +67,7 @@ export function createHarness(
     const spawns: FakeChild[] = [];
     const peers: MemoryLinePair[] = [];
     const driver = new NapukettoDriver({
-        launch: () => {
+        launch: async () => {
             const child = new FakeChild();
             spawns.push(child);
             return { child };

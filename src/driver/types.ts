@@ -41,8 +41,8 @@ export interface DriverLaunchResult {
     cleanup?: () => void;
 }
 
-/** 启动工厂（apply() 层用 launchSelfHost 组装；测试注入假 child）。 */
-export type DriverLauncher = () => DriverLaunchResult;
+/** 启动工厂（apply() 层用 launchSelfHost 组装；测试注入假 child）。异步：launchSelfHost 自 P2（2026-08-12）起为 async。 */
+export type DriverLauncher = () => Promise<DriverLaunchResult>;
 
 /** 驱动选项。 */
 export interface DriverOptions {

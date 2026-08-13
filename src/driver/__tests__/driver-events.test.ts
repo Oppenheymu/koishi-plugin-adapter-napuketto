@@ -3,16 +3,17 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { encodeIpcMessage, IPC_VERSION } from "../../ipc/index.js";
-import { createHarness } from "../test-utils.js";
+import { createHarness, flush } from "../test-utils.js";
 
 describe("NapukettoDriver 事件转发", () => {
-    it("login/qr/event/log 透传给 events 回调", () => {
+    it("login/qr/event/log 透传给 events 回调", async () => {
         const onLogin = vi.fn();
         const onQr = vi.fn();
         const onEvent = vi.fn();
         const onLog = vi.fn();
         const { driver, peers } = createHarness({ onLogin, onQr, onEvent, onLog });
         driver.start();
+        await flush();
         const pair = peers[0]?.peer;
         expect(pair).toBeDefined();
 

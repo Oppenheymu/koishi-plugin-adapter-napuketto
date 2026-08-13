@@ -14,6 +14,7 @@ describe("NapukettoDriver 启动", () => {
         const onReady = vi.fn();
         const { driver, emit } = createHarness({ onReady });
         driver.start();
+        await flush();
         expect(driver.currentState).toBe("booting");
         emit("ready");
         await flush();
@@ -22,25 +23,27 @@ describe("NapukettoDriver 启动", () => {
         driver.stop();
     });
 
-    it("start 幂等（非 idle 忽略）", () => {
+    it("start 幂等（非 idle 忽略）", async () => {
         const { driver, spawns } = createHarness();
         driver.start();
+        await flush();
         const count = spawns.length;
         driver.start();
         expect(spawns.length).toBe(count);
         driver.stop();
     });
 
-    it("spawn 抛错 → failed + onError", () => {
+    it("spawn 抛错 → failed + onError", async () => {
         const onError = vi.fn();
         const driver = new NapukettoDriver({
-            launch: () => {
+            launch: async () => {
                 throw new Error("self-host.cjs 缺失");
             },
             createTransport: () => new MemoryLinePair(),
             events: { onError },
         });
         driver.start();
+        await flush();
         expect(driver.currentState).toBe("failed");
         expect(onError).toHaveBeenCalled();
     });
@@ -51,6 +54,7 @@ describe("NapukettoDriver 停止", () => {
         const onExit = vi.fn();
         const { driver, spawns, peers } = createHarness({ onExit });
         driver.start();
+        await flush();
         // 先注册监听（stop 同步发送，后注册会漏掉）；control 是 client 发出的 →
         // 监听对端（pair.peer）
         const received: IpcMessage[] = [];
@@ -74,6 +78,7 @@ describe("NapukettoDriver 停止", () => {
         try {
             const { driver, spawns } = createHarness();
             driver.start();
+            await flush();
             driver.stop();
             // 子进程不退出：超时后强杀 + finishStop
             await vi.advanceTimersByTimeAsync(5_100);
@@ -87,6 +92,7 @@ describe("NapukettoDriver 停止", () => {
     it("stop 后不重启（即便随后 exit）", async () => {
         const { driver, spawns } = createHarness();
         driver.start();
+        await flush();
         driver.stop();
         spawns[0]?.emitExit(1, null);
         await flush();

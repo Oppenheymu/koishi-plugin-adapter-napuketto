@@ -29,6 +29,7 @@ function fakeResolveQq(qqPath?: string): QqInstallInfo {
         installDir: "C:/QQ/NTQQ",
         version: "9.9.33-51802",
         wrapperPath: "C:/QQ/NTQQ/versions/9.9.33-51802/resources/app/wrapper.node",
+        source: "local",
     };
 }
 

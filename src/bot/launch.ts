@@ -103,9 +103,11 @@ export function resolveLaunchOptions(
 
 /** 启动工厂（driver 注入：每次 spawn 组装一次 launchSelfHost 调用）。 */
 export function buildLaunch(config: NapukettoBotConfig): DriverLauncher {
-    return () => {
+    // ⚠️ launchSelfHost 自 P2（2026-08-12，Linux/wine 分支）起为 async：必须 await，
+    // 否则 child 取自 Promise 为 undefined，driver 随后在 child.once 处崩溃。
+    return async () => {
         const options = resolveLaunchOptions(config);
-        const { child } = launchSelfHost({
+        const { child } = await launchSelfHost({
             qq: options.qq,
             kernelEntry: options.kernelEntry,
             ...(options.selfHostEntry !== undefined

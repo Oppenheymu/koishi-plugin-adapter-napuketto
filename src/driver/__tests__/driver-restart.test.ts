@@ -11,6 +11,7 @@ describe("NapukettoDriver 重启", () => {
             const onReady = vi.fn();
             const { driver, spawns, emit } = createHarness({ onReady });
             driver.start();
+            await flush();
             expect(spawns.length).toBe(1);
 
             // 第 1 轮崩溃（code=1）→ restarting，退避 100ms
@@ -41,6 +42,7 @@ describe("NapukettoDriver 重启", () => {
                 },
             );
             driver.start();
+            await flush();
 
             // 第 1 次崩溃 → 重启
             spawns[0]?.emitExit(1, null);
@@ -61,6 +63,7 @@ describe("NapukettoDriver 重启", () => {
         try {
             const { driver, spawns } = createHarness();
             driver.start();
+            await flush();
             expect(spawns.length).toBe(1);
 
             // spawn 后 45s 内无任何消息 → 失联（兜 dlopen/登录卡死）
@@ -80,6 +83,7 @@ describe("NapukettoDriver 重启", () => {
         try {
             const { driver, spawns, emit } = createHarness();
             driver.start();
+            await flush();
             // 30s 时收到一条 status（seenAt 更新）
             await vi.advanceTimersByTimeAsync(30_000);
             emit("sessioning");

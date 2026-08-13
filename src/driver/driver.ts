@@ -18,6 +18,7 @@ import type {
     ChildProcessLike,
     DriverEvents,
     DriverLauncher,
+    DriverLaunchResult,
     DriverOptions,
     DriverState,
     ExitReason,
@@ -88,12 +89,12 @@ export class NapukettoDriver {
         return this.restartCount;
     }
 
-    /** 启动子进程（幂等：非 idle 直接忽略）。 */
+    /** 启动子进程（幂等：非 idle 直接忽略；spawn 异步 fire-and-forget）。 */
     start(): void {
         if (this.state !== "idle") {
             return;
         }
-        this.spawnProcess("start");
+        void this.spawnProcess("start");
     }
 
     /** 主动停止：发 control stop → 等退出（5s）→ kill。不再重启。 */
@@ -123,11 +124,11 @@ export class NapukettoDriver {
 
     // ── 内部 ──
 
-    private spawnProcess(reason: "start" | "restart"): void {
+    private async spawnProcess(reason: "start" | "restart"): Promise<void> {
         this.setState(reason === "start" ? "spawning" : "restarting");
-        let result: ReturnType<DriverLauncher>;
+        let result: DriverLaunchResult;
         try {
-            result = this.launch();
+            result = await this.launch();
         } catch (err) {
             this.handleSpawnError(err);
             return;
@@ -226,7 +227,7 @@ export class NapukettoDriver {
         this.setState("restarting");
         this.restartTimer = setTimeout(() => {
             this.restartCount = attempt;
-            this.spawnProcess("restart");
+            void this.spawnProcess("restart");
         }, delay);
     }
 
