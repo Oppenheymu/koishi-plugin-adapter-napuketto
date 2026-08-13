@@ -71,27 +71,28 @@ export class NapukettoLoginProvider extends DataService<LoginPanelPayload> {
     private readonly onRefreshQr: (() => void) | undefined;
 
     constructor(ctx: Context, options: LoginPanelOptions) {
-        // ⚠️ 必须 immediate: false（2026-08-14 根因修复）：cordis Service 在
-        // 'immediate: true' + 直接 new 时走 'expose' 符号路径——该路径只在
-        // 'ctx.plugin(ServiceClass)' 时被消费（scope.ts apply 里读 expose 后
-        // ctx.set(name, instance)），直接 new 永不消费 → 从不调用 ctx.set →
-        // ctx.get('console.services.napuketto-login-<uin>') 恒 undefined →
-        // 控制台客户端连接时的初始拉取（Client.refresh() 遍历 root internal +
-        // ctx.get）找不到本服务 → store 永远拿不到数据（二维码不渲染）。
-        // immediate: false 则 ready 后走 if (!immediate) ctx.set(name, self)
-        // 路径，服务值正常注册（bilibili-dm 的 BilibiliLauncher 同款 immediate:
-        // true 实则存在同一隐患，但它靠用户点按钮触发 PUSH 掩盖了）。
+        // ⚠️ 服务值必须注册到 root（2026-08-14 根因修复 v2）：登录是自动启动的，
+        // 二维码/状态在 koishi 启动阶段就推送完了，但此时控制台客户端尚未连接，
+        // DataService.refresh() → broadcast 的 `if (!handles.length) return` 把
+        // 推送全部丢弃；用户打开控制台后只能靠 Client.refresh() 的 PULL 拉取
+        // 快照。Client.refresh() 用「Console 服务的 ctx」调 ctx.get(name) 读
+        // store——本 provider 的 ctx 是 bot 的 inject(['console']) fork 作用域，
+        // 与 Console 服务的 ctx 是兄弟作用域，set 到 inject 作用域后 PULL 可能
+        // 读不到。修复：① ctx.root.set（root 是所有作用域 store 的祖先，PULL
+        // 必能读到）；② immediate: true（避免 ready 后 `if (!immediate)
+        // ctx.set` 与手动 set 重复注册抛 "service has been registered"，该异常
+        // 会 cancel inject 作用域、连带移除 console/connection 兜底监听）。
         super(ctx, loginServiceId(options.selfId) as keyof Console.Services, {
-            immediate: false,
+            immediate: true,
         });
         this.onRelogin = options.onRelogin;
         this.onRefreshQr = options.onRefreshQr;
         this.payload = { state: "idle", selfId: options.selfId };
-        // 显式注册服务值（不依赖 ready 事件）：确保控制台客户端连接时
-        // Client.refresh() 的初始拉取（root.get）能找到本服务，store 才有数据。
-        ctx.set(`console.services.${loginServiceId(options.selfId)}`, this);
+        // 显式注册服务值到 root：确保控制台客户端连接时 Client.refresh() 的
+        // 初始拉取（root.get）能找到本服务，store 才有数据。
+        ctx.root.set(`console.services.${loginServiceId(options.selfId)}`, this);
         console.log(
-            "[napuketto] provider 已注册服务值: console.services." + loginServiceId(options.selfId),
+            `[napuketto] provider 已注册服务值: console.services.${loginServiceId(options.selfId)}`,
         );
         ctx.logger.info(
             "[napuketto] 控制台登录面板 provider 已创建: serviceId=%s",

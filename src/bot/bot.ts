@@ -162,6 +162,12 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
             });
             // 装配完成立即推送当前快照（面板打开即有状态，不必等下次变化）
             this.pushLoginPanel();
+            // 兜底（2026-08-14）：登录是自动启动的，早于客户端连接，PUSH 已被
+            // broadcast 的 `if (!handles.length) return` 丢弃；客户端连接瞬间
+            // 再推一次，确保控制台打开即回放最新登录快照（含二维码）。
+            ctx.on("console/connection", () => {
+                this.pushLoginPanel();
+            });
         });
 
         // 数据库操作集中管理（design.md §5.13）：dispatch 前原子预热 channel/user，
