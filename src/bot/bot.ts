@@ -24,7 +24,7 @@ import type { Context } from "@satorijs/core";
 import { Bot, h, type Context as KoishiContext, type MessageEncoder, type Universal } from "koishi";
 import { NapukettoInternal } from "../actions/index.js";
 import { type LogLevel, type NapukettoBotConfig, napukettoConfigSchema } from "../config.js";
-import { NapukettoLoginProvider, toLoginPanelPayload } from "../console/index.js";
+import { loginServiceId, NapukettoLoginProvider, toLoginPanelPayload } from "../console/index.js";
 import { NapukettoDatabase } from "../database/index.js";
 import { NapukettoDriver } from "../driver/index.js";
 import type { HFn } from "../events/elements.js";
@@ -155,19 +155,30 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
         (this.ctx as unknown as KoishiContext).inject(["console"], (ctx) => {
             this.logger.info("[napuketto] console 服务就绪，开始装配控制台登录面板");
             registerConsoleEntry(ctx);
-            this.panelRef.current = new NapukettoLoginProvider(ctx, {
+            const serviceName = `console.services.${loginServiceId(config.selfId)}`;
+            // reload 去重：root store 不随插件 dispose 自动清理，若同 selfId
+            // 服务已注册（上一次 apply 未清理干净），直接复用旧 provider。
+            const existing = ctx.root.get(serviceName) as NapukettoLoginProvider | undefined;
+            if (existing !== undefined) {
+                this.panelRef.current = existing;
+                this.pushLoginPanel();
+                return;
+            }
+            const provider = new NapukettoLoginProvider(ctx, {
                 selfId: config.selfId,
                 onRelogin: () => this.requestRelogin(),
                 onRefreshQr: () => void this.requestRefreshQr(),
             });
+            this.panelRef.current = provider;
+            // 注册服务值到 root store（Client.refresh() 的 PULL 读 root store）；
+            // 拿 set 返回的 dispose 函数，在 bot dispose 时调用——既清理 store
+            // 又从 root scope.disposables 移除自身（reload 不报错、不泄漏）。
+            const disposeService = ctx.root.set(serviceName, provider);
+            ctx.on("dispose", () => {
+                disposeService();
+            });
             // 装配完成立即推送当前快照（面板打开即有状态，不必等下次变化）
             this.pushLoginPanel();
-            // 兜底（2026-08-14）：登录是自动启动的，早于客户端连接，PUSH 已被
-            // broadcast 的 `if (!handles.length) return` 丢弃；客户端连接瞬间
-            // 再推一次，确保控制台打开即回放最新登录快照（含二维码）。
-            ctx.on("console/connection", () => {
-                this.pushLoginPanel();
-            });
         });
 
         // 数据库操作集中管理（design.md §5.13）：dispatch 前原子预热 channel/user，

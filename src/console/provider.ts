@@ -71,29 +71,21 @@ export class NapukettoLoginProvider extends DataService<LoginPanelPayload> {
     private readonly onRefreshQr: (() => void) | undefined;
 
     constructor(ctx: Context, options: LoginPanelOptions) {
-        // ⚠️ 服务值必须注册到 root（2026-08-14 根因修复 v2）：登录是自动启动的，
-        // 二维码/状态在 koishi 启动阶段就推送完了，但此时控制台客户端尚未连接，
-        // DataService.refresh() → broadcast 的 `if (!handles.length) return` 把
-        // 推送全部丢弃；用户打开控制台后只能靠 Client.refresh() 的 PULL 拉取
-        // 快照。Client.refresh() 用「Console 服务的 ctx」调 ctx.get(name) 读
-        // store——本 provider 的 ctx 是 bot 的 inject(['console']) fork 作用域，
-        // 与 Console 服务的 ctx 是兄弟作用域，set 到 inject 作用域后 PULL 可能
-        // 读不到。修复：① ctx.root.set（root 是所有作用域 store 的祖先，PULL
-        // 必能读到）；② immediate: true（避免 ready 后 `if (!immediate)
-        // ctx.set` 与手动 set 重复注册抛 "service has been registered"，该异常
-        // 会 cancel inject 作用域、连带移除 console/connection 兜底监听）。
+        // ⚠️ 服务值注册交给调用方（bot.ts）——2026-08-14 根因修复 v3：登录是
+        // 自动启动的，二维码/状态在控制台客户端连接前就推完，被
+        // DataService.refresh() → Console.broadcast() 的 `if (!handles.length)
+        // return` 丢弃；用户打开控制台后只能靠 Client.refresh() 的 PULL 拉取。
+        // PULL 用 `root.get('console.services.<id>')` 读 root store——所以服务
+        // 值必须注册到 root store，且要在 bot dispose 时清理（否则 reload 报
+        // `service has been registered`）。这两件事由 bot.ts 统一处理（拿 set
+        // 返回的 dispose 函数在 dispose 时调用）；provider 自身用 immediate:
+        // true（直接 new 走 expose 路径，不自动 set，避免与调用方重复注册）。
         super(ctx, loginServiceId(options.selfId) as keyof Console.Services, {
             immediate: true,
         });
         this.onRelogin = options.onRelogin;
         this.onRefreshQr = options.onRefreshQr;
         this.payload = { state: "idle", selfId: options.selfId };
-        // 显式注册服务值到 root：确保控制台客户端连接时 Client.refresh() 的
-        // 初始拉取（root.get）能找到本服务，store 才有数据。
-        ctx.root.set(`console.services.${loginServiceId(options.selfId)}`, this);
-        console.log(
-            `[napuketto] provider 已注册服务值: console.services.${loginServiceId(options.selfId)}`,
-        );
         ctx.logger.info(
             "[napuketto] 控制台登录面板 provider 已创建: serviceId=%s",
             loginServiceId(options.selfId),
