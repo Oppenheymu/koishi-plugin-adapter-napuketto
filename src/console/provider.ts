@@ -71,12 +71,32 @@ export class NapukettoLoginProvider extends DataService<LoginPanelPayload> {
     private readonly onRefreshQr: (() => void) | undefined;
 
     constructor(ctx: Context, options: LoginPanelOptions) {
+        // ⚠️ 必须 immediate: false（2026-08-14 根因修复）：cordis Service 在
+        // 'immediate: true' + 直接 new 时走 'expose' 符号路径——该路径只在
+        // 'ctx.plugin(ServiceClass)' 时被消费（scope.ts apply 里读 expose 后
+        // ctx.set(name, instance)），直接 new 永不消费 → 从不调用 ctx.set →
+        // ctx.get('console.services.napuketto-login-<uin>') 恒 undefined →
+        // 控制台客户端连接时的初始拉取（Client.refresh() 遍历 root internal +
+        // ctx.get）找不到本服务 → store 永远拿不到数据（二维码不渲染）。
+        // immediate: false 则 ready 后走 if (!immediate) ctx.set(name, self)
+        // 路径，服务值正常注册（bilibili-dm 的 BilibiliLauncher 同款 immediate:
+        // true 实则存在同一隐患，但它靠用户点按钮触发 PUSH 掩盖了）。
         super(ctx, loginServiceId(options.selfId) as keyof Console.Services, {
-            immediate: true,
+            immediate: false,
         });
         this.onRelogin = options.onRelogin;
         this.onRefreshQr = options.onRefreshQr;
         this.payload = { state: "idle", selfId: options.selfId };
+        // 显式注册服务值（不依赖 ready 事件）：确保控制台客户端连接时
+        // Client.refresh() 的初始拉取（root.get）能找到本服务，store 才有数据。
+        ctx.set(`console.services.${loginServiceId(options.selfId)}`, this);
+        console.log(
+            "[napuketto] provider 已注册服务值: console.services." + loginServiceId(options.selfId),
+        );
+        ctx.logger.info(
+            "[napuketto] 控制台登录面板 provider 已创建: serviceId=%s",
+            loginServiceId(options.selfId),
+        );
         // 指令上行：前端「重新登录」→ bot 层重启登录流程
         ctx.console.addListener(reloginEventName(options.selfId) as keyof Events, () => {
             this.onRelogin?.();
@@ -89,12 +109,25 @@ export class NapukettoLoginProvider extends DataService<LoginPanelPayload> {
 
     /** 更新登录状态并推送（每次全量推送——状态变化不频繁，无需 diff）。 */
     update(next: LoginPanelPayload): void {
+        this.ctx.logger.info(
+            "[napuketto] 控制台登录面板 update: state=%s selfId=%s",
+            next.state,
+            next.selfId,
+        );
         this.payload = next;
         this.refresh();
     }
 
     /** DataService 抽象方法：前端 store 请求时返回当前快照。 */
     override async get(): Promise<LoginPanelPayload> {
+        // 诊断：控制台客户端连接时 Client.refresh() 会调 get()（PULL 路径）。
+        // 若这行不出现 = 服务值未注册 / 客户端没拉取到本服务。
+        console.log(
+            "[napuketto] get() 被调用（前端拉取）: state=" +
+                this.payload.state +
+                " qr=" +
+                (this.payload.qr !== undefined),
+        );
         return this.payload;
     }
 }

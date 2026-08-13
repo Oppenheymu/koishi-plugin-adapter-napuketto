@@ -70,6 +70,12 @@ function registerConsoleEntry(ctx: KoishiContext): void {
     }
     consoleEntryRegistered = true;
     const root = packageRoot();
+    console.log(
+        "[napuketto] registerConsoleEntry: addEntry dev=" +
+            resolve(root, "client/index.ts") +
+            " prod=" +
+            resolve(root, "dist"),
+    );
     ctx.console.addEntry({
         dev: resolve(root, "client/index.ts"),
         prod: resolve(root, "dist"),
@@ -147,6 +153,7 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
         // 控制台登录面板（console 服务就绪后装配；satorijs Context → koishi
         // Context cast——运行时同一实例，仅类型收窄）。
         (this.ctx as unknown as KoishiContext).inject(["console"], (ctx) => {
+            this.logger.info("[napuketto] console 服务就绪，开始装配控制台登录面板");
             registerConsoleEntry(ctx);
             this.panelRef.current = new NapukettoLoginProvider(ctx, {
                 selfId: config.selfId,
@@ -383,9 +390,15 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
     private pushLoginPanel(): void {
         const provider = this.panelRef.current;
         if (provider === null) {
+            // 诊断：provider 未装配 = console inject 回调尚未触发（root cause A）
+            this.logger.debug(
+                "[napuketto] pushLoginPanel: provider 未装配（console 未就绪），跳过推送",
+            );
             return;
         }
-        provider.update(toLoginPanelPayload(this.login.snapshot, this.config.selfId));
+        const payload = toLoginPanelPayload(this.login.snapshot, this.config.selfId);
+        this.logger.debug("[napuketto] pushLoginPanel: 推送登录面板 state=%s", payload.state);
+        provider.update(payload);
     }
 
     /** 重新登录：重启子进程重新走登录流程（快速登录优先、QR 兜底）。 */

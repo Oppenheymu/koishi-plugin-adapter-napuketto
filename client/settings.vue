@@ -80,14 +80,15 @@ const SERVICE_PREFIX = 'napuketto-login';
 
 const local = inject('manager.settings.local', ref({ name: '' }));
 const config = inject('manager.settings.config', ref({}));
+const current = inject('manager.settings.current', ref({}));
 
 /** 后端推送的登录面板数据（store['napuketto-login-<uin>']，Vue 响应式）。 */
 const data = computed<LoginPanelData | null>(() =>
 {
   // 1. 校验当前插件名称匹配
   if (!local.value || local.value.name !== PLUGIN_NAME) return null;
-  // 2. 禁用实例不显示
-  if ((config.value as { disabled?: boolean })?.disabled === true) return null;
+  // 2. 禁用实例不显示（disabled 在 manager.settings.current 上，config 里拿不到）
+  if ((current.value as { disabled?: boolean })?.disabled === true) return null;
   // 3. 从配置拿 selfId（多账号隔离：serviceId 按 uin 区分）
   const selfId = (config.value as { selfId?: string })?.selfId;
   if (!selfId) return null;
