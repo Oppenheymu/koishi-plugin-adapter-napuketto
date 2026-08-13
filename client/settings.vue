@@ -4,6 +4,7 @@
   挂在插件详情页（client/index.ts 的 plugin-details slot）。数据源：
   - store['napuketto-login-<uin>']：后端 DataService 推送（状态 + 二维码）
   - send('napuketto-login-<uin>/relogin')：触发重新登录（重启子进程登录流程）
+  - send('napuketto-login-<uin>/refresh-qr')：手动刷新二维码（IPC 直达，不重启子进程）
 
   纯展示 + 指令上行，零 HTTP 请求（koishi console WebSocket 通道）。
 -->
@@ -15,17 +16,15 @@
       <k-progress indeterminate />
     </template>
 
-    <!-- waiting_scan：扫码登录（二维码 + 刷新） -->
+    <!-- waiting_scan：扫码登录（二维码 + 手动刷新；kernel 过期自动推新码） -->
     <template v-else-if="data.state === 'waiting_scan'">
       <p>{{ data.message }}</p>
       <div v-if="data.qr" class="qrcode-container">
         <img class="qrcode" :src="qrSrc" alt="NapukettoQQ 登录二维码" />
-        <div v-if="qrExpired" class="refresh-overlay">
-          <k-button @click="relogin">二维码已过期，点击刷新</k-button>
-        </div>
       </div>
       <p v-else>正在获取二维码…</p>
-      <k-button :disabled="qrLoading" @click="relogin">刷新二维码</k-button>
+      <p v-if="data.qr" class="hint">请在两分钟内使用手机端扫描并确认登录</p>
+      <k-button :disabled="qrLoading" @click="refreshQr">刷新二维码</k-button>
       <p v-if="data.qr" class="hint">
         <a :href="data.qr.qrcodeUrl" target="_blank" rel="noopener">无法扫码？点此打开登录链接</a>
       </p>
@@ -76,8 +75,6 @@ interface LoginPanelData {
 const PLUGIN_NAME = 'koishi-plugin-adapter-napuketto';
 /** DataService serviceId 前缀（与后端 src/console/provider.ts 对齐）。 */
 const SERVICE_PREFIX = 'napuketto-login';
-/** 二维码展示过期时间（毫秒，3 分钟辅助计时；真正过期由 kernel 自动刷新推新码）。 */
-const QR_EXPIRY_MS = 3 * 60 * 1000;
 
 // ── 插件详情页上下文注入（识别当前查看的插件实例 + 配置） ──
 
@@ -109,8 +106,7 @@ const qrSrc = computed(() =>
   return `data:image/png;base64,${pngBase64}`;
 });
 
-/** 二维码展示过期（3 分钟辅助 UI 计时器）。 */
-const qrExpired = ref(false);
+/** 刷新二维码按钮 loading 态。 */
 const qrLoading = ref(false);
 
 /** 面板提示色（k-comment type）。 */
@@ -122,42 +118,27 @@ const commentType = computed(() =>
   return 'info';
 });
 
-// ── 状态监听：进入 waiting_scan 启动展示计时器，离开则复位 ──
+// ── 状态监听：进入 waiting_scan 复位刷新 loading；新二维码到达复位 loading ──
 
 watch(
   () => data.value?.state,
-  (state, oldState) =>
+  (state) =>
   {
     if (state === 'waiting_scan') {
       qrLoading.value = false;
-      qrExpired.value = false;
-      startQrExpiryTimer();
-    } else if (oldState === 'waiting_scan' && state !== 'waiting_scan') {
-      qrExpired.value = false;
-      stopQrExpiryTimer();
     }
   },
   { immediate: true },
 );
 
-let expiryTimer: ReturnType<typeof setTimeout> | null = null;
-
-function startQrExpiryTimer(): void
-{
-  stopQrExpiryTimer();
-  expiryTimer = setTimeout(() =>
+// 新二维码到达（首次 / 手动刷新 / kernel 过期自动推新码）→ 复位刷新 loading
+watch(
+  () => data.value?.qr?.pngBase64,
+  () =>
   {
-    qrExpired.value = true;
-  }, QR_EXPIRY_MS);
-}
-
-function stopQrExpiryTimer(): void
-{
-  if (expiryTimer !== null) {
-    clearTimeout(expiryTimer);
-    expiryTimer = null;
-  }
-}
+    qrLoading.value = false;
+  },
+);
 
 // ── 指令上行：重新登录 / 刷新二维码 ──
 
@@ -168,6 +149,20 @@ function relogin(): void
   qrLoading.value = true;
   // 后端 NapukettoLoginProvider 注册的 console 事件（WebSocket）
   send(`${SERVICE_PREFIX}-${selfId}/relogin`, { selfId });
+}
+
+function refreshQr(): void
+{
+  const selfId = (config.value as { selfId?: string })?.selfId;
+  if (!selfId) return;
+  qrLoading.value = true;
+  // 后端 NapukettoLoginProvider 注册的 refresh-qr 事件 → IPC login.refreshQr（不重启子进程）
+  send(`${SERVICE_PREFIX}-${selfId}/refresh-qr`, { selfId });
+  // 兜底：刷新失败 / 无新二维码时 3s 后复位 loading
+  setTimeout(() =>
+  {
+    qrLoading.value = false;
+  }, 3000);
 }
 </script>
 
@@ -185,17 +180,6 @@ function relogin(): void
   height: 200px;
   border-radius: 8px;
   background: #fff;
-}
-
-.refresh-overlay
-{
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.85);
-  border-radius: 8px;
 }
 
 .hint

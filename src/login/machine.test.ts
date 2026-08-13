@@ -65,6 +65,13 @@ describe("NapukettoLoginState", () => {
         expect(changes).toEqual(["failed"]);
     });
 
+    it("failed 带 message → lastError 用 message（如登录超时）", () => {
+        const machine = new NapukettoLoginState();
+        machine.onLogin("failed", undefined, "登录超时，请刷新页面重试");
+        expect(machine.currentState).toBe("failed");
+        expect(machine.snapshot.lastError).toBe("登录超时，请刷新页面重试");
+    });
+
     it("onReady 在未到 logged_in 时补发（快速登录直通兜底）", () => {
         const changes: string[] = [];
         const machine = new NapukettoLoginState({

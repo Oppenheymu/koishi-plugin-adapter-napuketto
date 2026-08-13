@@ -7,7 +7,9 @@ export {
     LOGIN_SERVICE_PREFIX,
     loginServiceId,
     NapukettoLoginProvider,
+    REFRESH_QR_EVENT_SUFFIX,
     RELOGIN_EVENT_SUFFIX,
+    refreshQrEventName,
     reloginEventName,
 } from "./provider.js";
 export type { LoginPanelPayload } from "./types.js";

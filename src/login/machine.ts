@@ -34,13 +34,13 @@ export class NapukettoLoginState implements LoginObserver {
         };
     }
 
-    /** 收到登录状态（driver.onLogin）。 */
-    onLogin(state: LoginState, selfInfo?: SelfInfo): void {
+    /** 收到登录状态（driver.onLogin）。message 为失败原因（如登录超时）。 */
+    onLogin(state: LoginState, selfInfo?: SelfInfo, message?: string): void {
         if (selfInfo !== undefined) {
             this.self = selfInfo;
         }
         if (state === "failed") {
-            this.lastError = "登录失败";
+            this.lastError = message ?? "登录失败";
         }
         this.transition(state);
     }

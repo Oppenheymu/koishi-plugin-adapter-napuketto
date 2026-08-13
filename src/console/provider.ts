@@ -26,6 +26,7 @@ declare module "@koishijs/plugin-console" {
     }
     interface Events {
         [key: `napuketto-login-${string}/relogin`]: (data: { selfId: string }) => void;
+        [key: `napuketto-login-${string}/refresh-qr`]: (data: { selfId: string }) => void;
     }
 }
 
@@ -34,6 +35,9 @@ export const LOGIN_SERVICE_PREFIX = "napuketto-login";
 
 /** 重新登录 console 事件名后缀。 */
 export const RELOGIN_EVENT_SUFFIX = "relogin";
+
+/** 刷新二维码 console 事件名后缀。 */
+export const REFRESH_QR_EVENT_SUFFIX = "refresh-qr";
 
 /** store 键 / serviceId。 */
 export function loginServiceId(selfId: string): string {
@@ -45,28 +49,41 @@ export function reloginEventName(selfId: string): string {
     return `${loginServiceId(selfId)}/${RELOGIN_EVENT_SUFFIX}`;
 }
 
+/** 刷新二维码事件名（前端 send / 后端 addListener 用）。 */
+export function refreshQrEventName(selfId: string): string {
+    return `${loginServiceId(selfId)}/${REFRESH_QR_EVENT_SUFFIX}`;
+}
+
 /** provider 选项。 */
 export interface LoginPanelOptions {
     /** 登录账号（QQ 号）。 */
     selfId: string;
     /** 前端点「重新登录」回调（bot 层发 IPC control restart）。 */
     onRelogin?: () => void;
+    /** 前端点「刷新二维码」回调（bot 层发 IPC login.refreshQr 动作，不重启子进程）。 */
+    onRefreshQr?: () => void;
 }
 
 /** 控制台登录面板数据服务（DataService 下行 + relogin 指令上行）。 */
 export class NapukettoLoginProvider extends DataService<LoginPanelPayload> {
     private payload: LoginPanelPayload;
     private readonly onRelogin: (() => void) | undefined;
+    private readonly onRefreshQr: (() => void) | undefined;
 
     constructor(ctx: Context, options: LoginPanelOptions) {
         super(ctx, loginServiceId(options.selfId) as keyof Console.Services, {
             immediate: true,
         });
         this.onRelogin = options.onRelogin;
+        this.onRefreshQr = options.onRefreshQr;
         this.payload = { state: "idle", selfId: options.selfId };
         // 指令上行：前端「重新登录」→ bot 层重启登录流程
         ctx.console.addListener(reloginEventName(options.selfId) as keyof Events, () => {
             this.onRelogin?.();
+        });
+        // 指令上行：前端「刷新二维码」→ bot 层 IPC 直达 refreshQr（不重启子进程）
+        ctx.console.addListener(refreshQrEventName(options.selfId) as keyof Events, () => {
+            this.onRefreshQr?.();
         });
     }
 

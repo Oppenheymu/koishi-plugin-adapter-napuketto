@@ -151,6 +151,7 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
             this.panelRef.current = new NapukettoLoginProvider(ctx, {
                 selfId: config.selfId,
                 onRelogin: () => this.requestRelogin(),
+                onRefreshQr: () => void this.requestRefreshQr(),
             });
             // 装配完成立即推送当前快照（面板打开即有状态，不必等下次变化）
             this.pushLoginPanel();
@@ -324,7 +325,7 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
                     this.logger.debug("[napuketto] 引导阶段: %s", status.phase);
                 },
                 onLogin: (payload) => {
-                    this.login.onLogin(payload.state, payload.selfInfo);
+                    this.login.onLogin(payload.state, payload.selfInfo, payload.message);
                 },
                 onQr: (qr) => this.login.onQr(qr),
                 onEvent: (payload) => {
@@ -395,6 +396,24 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
             client.sendControl({ command: "restart" });
         } else {
             this.logger.warn("[napuketto] 子进程未就绪，无法重新登录");
+        }
+    }
+
+    /** 刷新二维码：IPC 直达子进程内 kernel 的 QrLoginSession.refresh()（不重启子进程）。 */
+    private async requestRefreshQr(): Promise<void> {
+        const client = this.clientRef.current;
+        if (client === null) {
+            this.logger.warn("[napuketto] 子进程未就绪，无法刷新二维码");
+            return;
+        }
+        try {
+            const triggered = await client.request("login.refreshQr");
+            this.logger.info(
+                "[napuketto] 刷新二维码: %s",
+                triggered === true ? "已触发新二维码" : "当前不在扫码态（忽略）",
+            );
+        } catch (error) {
+            this.logger.warn("[napuketto] 刷新二维码失败: %o", error);
         }
     }
 
