@@ -14,7 +14,7 @@
  */
 import type { Context, Logger } from "koishi";
 import { loginServiceId, NapukettoLoginProvider, toLoginPanelPayload } from "../console/index.js";
-import type { IpcControlPayload } from "../ipc/types.js";
+import type { IpcControlPayload } from "@napuketto/loader";
 import type { LoginSnapshot } from "../login/types.js";
 import { registerConsoleEntry } from "./utils/console-entry.js";
 

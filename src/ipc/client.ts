@@ -18,7 +18,7 @@ import {
     type IpcControlPayload,
     type IpcMessage,
     type IpcResultMessage,
-} from "./types.js";
+} from "@napuketto/loader";
 
 /** 客户端选项。 */
 interface IpcClientOptions {

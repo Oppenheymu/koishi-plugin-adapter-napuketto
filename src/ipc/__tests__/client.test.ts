@@ -13,7 +13,7 @@ import {
     NapukettoIpcClient,
 } from "../index.js";
 import { captureAction, MemoryLinePair } from "../test-utils.js";
-import { IPC_VERSION } from "../types.js";
+import { IPC_VERSION } from "@napuketto/loader";
 
 describe("NapukettoIpcClient 请求-响应", () => {
     it("action 请求 → result 成功响应", async () => {

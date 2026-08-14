@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { decodeIpcMessage, encodeIpcMessage, type IpcMessage } from "../index.js";
-import { IPC_VERSION } from "../types.js";
+import { IPC_VERSION } from "@napuketto/loader";
 
 describe("codec", () => {
     it("encode/decode roundtrip", () => {

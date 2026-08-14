@@ -14,4 +14,4 @@ export {
     type IpcLogPayload,
     type IpcMessage,
     type IpcStatusPayload,
-} from "./types.js";
+} from "@napuketto/loader";
