@@ -708,6 +708,17 @@ kctx.inject(['console'], (ctx) => {
 - 过期展示：前端做 3 分钟展示计时器（纯 UI 辅助），真正过期由 kernel 自动 refresh 推新码
 - **零 HTTP 请求**：只读 store + 发 WebSocket 事件
 
+**⚠️ 子组件标签必须与 import 名大小写一致（2026-08-14 实证，二维码不显示根因）**：
+模板里写 `<qrcode-panel>`（全小写连写）但 import 的是 `QrCodePanel`——Vue SFC 编译器
+做 kebab-case→PascalCase 匹配：`<qrcode-panel>` 反推为 `QrcodePanel`，与 `QrCodePanel`
+**大小写不匹配**（`Qrcode` ≠ `QrCode`）→ 编译器无法静态关联 import 变量 → 降级为
+`resolveComponent("qrcode-panel")` 运行时解析 → 组件未显式注册 → 渲染成**空的自定义
+元素**（DOM 里 `<qrcode-panel qr="[object Object]">`，props 全字符串化），同时
+tree-shaking 把未被引用的 QrCodePanel 组件定义从产物删掉（产物只有 StatusSection）。
+**修复**：模板标签用 PascalCase `<QrCodePanel>`（或与 import 名完全匹配的 kebab-case）。
+判别信号：dist 产物里引用是 `p("qrcode-panel")`（resolveComponent）而非 `g(变量)`；
+CSS 缺失对应组件 scoped 样式（`.qrcode-container` 等）。
+
 **client 构建**（`scripts/build-client.mjs`）：等价 `@koishijs/client` 的 yakumo client
 构建（vite）：`client/index.ts` → `dist/index.js`（IIFE，`external: ['vue', 'vue-router',
 '@vueuse/core', '@koishijs/client']`——运行时由 koishi console 提供全局变量）。dev 模式

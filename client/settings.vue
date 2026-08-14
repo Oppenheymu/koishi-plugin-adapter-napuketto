@@ -17,8 +17,12 @@
 <template>
   <div v-if="data" class="napuketto-settings">
     <k-comment :type="commentType">
-      <!-- waiting_scan：扫码登录（二维码 + 手动刷新；kernel 过期自动推新码） -->
-      <qrcode-panel
+      <!-- waiting_scan：扫码登录（二维码 + 手动刷新；kernel 过期自动推新码）
+           ⚠️ 标签必须用 <QrCodePanel>（PascalCase）：<qrcode-panel> 的 kebab-case
+           反推是 QrcodePanel，与 import 的 QrCodePanel 大小写不匹配 → Vue 编译
+           器无法静态关联（降级 resolveComponent 运行时解析 + tree-shaking 删
+           组件定义）→ 二维码面板渲染成空的自定义元素（2026-08-14 实证）。 -->
+      <QrCodePanel
         v-if="data.state === 'waiting_scan'"
         :image="data.image"
         :message="data.message"
