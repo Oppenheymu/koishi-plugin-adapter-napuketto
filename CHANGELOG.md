@@ -1,5 +1,14 @@
 # koishi-plugin-adapter-napuketto
 
+## 0.0.15
+
+### Patch Changes
+
+- fix: 补全 Bot 类服务依赖声明——`static inject` 增加 `console: { required: false }`（登录面板
+  依赖，与 database 同为可选增强）；Bot 子类插件（`export default`）模块级导出被 loader
+  unwrapExports 丢弃，inject 必须挂类上（napcat 同构），此前 console 仅经 `ctx.inject` fork
+  声明、static 层缺失
+
 ## 0.0.14
 
 ### Patch Changes

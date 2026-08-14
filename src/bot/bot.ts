@@ -75,11 +75,19 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
         options?: unknown,
     ) => MessageEncoder<never, never>;
 
-    // ⚠️ 声明 optional 数据库依赖（2026-08-09）：cordis 对未注册/未声明 inject 的
-    // 服务访问 emit `internal/warning`（实测每条消息刷 `property database is not
-    // registered`）。optional 声明不强制依赖（用户没装数据库插件也能跑，只是不
-    // 预热）；配合 NapukettoDatabase 内部收 root ctx 双保险（design.md §5.13）。
-    static inject = { database: { required: false } };
+    // ⚠️ 声明服务依赖（2026-08-09 database / 2026-08-14 console）：
+    // Bot 子类插件（export default）的模块级导出会被 loader unwrapExports 丢弃，
+    // inject 必须挂类上（static，napcat 同构）。两个都是**可选增强**——
+    // database：预热 channel/user 消除 koishi get-or-create 并发竞态（没装数据库
+    // 插件也能跑，只是不预热，koishi 兜底）；console：控制台登录面板（没装
+    // 控制台没面板，登录走二维码文件/日志）。cordis 对未声明 inject 的服务访问
+    // emit internal/warning（实测每条消息刷 `property database is not
+    // registered`），optional 声明让 internal/inject 检查放行，消除刷屏；
+    // 配合 NapukettoDatabase 内部收 root ctx 双保险（design.md §5.13）。
+    static inject = {
+        database: { required: false },
+        console: { required: false },
+    };
 
     /** 当前 IPC 客户端引用（driver 重启后换实例，onReady 更新）。 */
     private readonly clientRef: { current: NapukettoIpcClient | null } = { current: null };

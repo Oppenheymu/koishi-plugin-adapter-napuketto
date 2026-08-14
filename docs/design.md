@@ -771,8 +771,11 @@ undefined 并**每次访问都 emit `internal/warning`**（实测每条消息刷
 database is not registered`）。修复：
 - `NapukettoDatabase` 构造时收 `ctx.root`（root 的 internal 一定含 database，且
   `checkInject` 对 root 直接放行——root 无 plugin runtime，**不产生 warning**）；
-- `NapukettoBot` 声明 `static inject = { database: { required: false } }`
-  （optional 依赖，`internal/inject` 检查放行，双保险；不强制用户装数据库）。
+- `NapukettoBot` 声明 `static inject = { database: { required: false }, console:
+  { required: false } }`（2026-08-14 补全：console 登录面板也是可选增强；Bot
+  子类插件 `export default` 的模块级导出会被 loader unwrapExports 丢弃，inject
+  必须挂类上 static。optional 依赖让 `internal/inject` 检查放行，双保险；
+  不强制用户装数据库/控制台）。
 
 **用户预热（ensureUser，2026-08-09）**：binding 冲突（`UNIQUE constraint failed:
 binding.pid, binding.platform`）与 channel 冲突**同源**——`session.getUser` 也是
