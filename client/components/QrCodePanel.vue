@@ -6,7 +6,7 @@
   持有共享状态），本组件纯展示 + 事件上行。
 -->
 <template>
-  <div>
+  <div class="qrcode-panel">
     <div v-if="image" class="qrcode-container">
       <img class="qrcode" :src="image" alt="NapukettoQQ 登录二维码" />
       <!-- 本地 2 分钟过期遮罩（kernel 过期会自动推新码，新码到达即复位） -->
@@ -71,11 +71,18 @@ const emit = defineEmits<{
 </script>
 
 <style lang="scss" scoped>
+.qrcode-panel
+{
+  // 面板内边距：顶部二维码/底部操作按钮离 k-comment 边缘留出呼吸空间
+  //（k-comment 上下 padding 仅 1px，内容贴边，2026-08-14 观感修复）
+  padding: 0.75rem 0;
+}
+
 .qrcode-container
 {
   position: relative;
   display: inline-block;
-  margin: 0.5rem 0 0.35rem;
+  margin: 0 0 0.5rem;
   border: 1px solid #eee;
   padding: 10px;
   border-radius: 8px;
@@ -87,6 +94,8 @@ const emit = defineEmits<{
 {
   display: block;
   max-width: 200px;
+  // 二维码圆角（容器 8px，图片裁角 4px 内缩，视觉更柔和）
+  border-radius: 4px;
   image-rendering: pixelated;
 }
 
@@ -137,7 +146,7 @@ const emit = defineEmits<{
 .qrcode-actions
 {
   display: flex;
-  gap: 0.5rem;
+  gap: 1rem; // 按钮间距（0.5rem 太挤，2026-08-14 观感修复）
   align-items: center;
 }
 
