@@ -12,9 +12,10 @@
  *
  * 运行时 import koishi / @koishijs/plugin-console——本文件不进单测。
  */
+
+import type { IpcControlPayload } from "@napuketto/loader";
 import type { Context, Logger } from "koishi";
 import { loginServiceId, NapukettoLoginProvider, toLoginPanelPayload } from "../console/index.js";
-import type { IpcControlPayload } from "@napuketto/loader";
 import type { LoginSnapshot } from "../login/types.js";
 import { registerConsoleEntry } from "./utils/console-entry.js";
 

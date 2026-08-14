@@ -5,7 +5,7 @@
  * 解码宽松：非法行 / 空行 / v 不匹配 / 未知 type → null，调用方记日志跳过，
  * 不崩通道。
  */
-import { IpcMessageSchema, type IpcMessage } from "@napuketto/loader";
+import { type IpcMessage, IpcMessageSchema } from "@napuketto/loader";
 
 /** 编码为 JSON 行（追加换行）。 */
 export function encodeIpcMessage(message: IpcMessage): string {

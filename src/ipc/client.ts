@@ -8,10 +8,6 @@
  *  - 事件分发（on(type, handler)，泛型收窄到具体消息类型）
  */
 
-import { decodeIpcMessage, encodeIpcMessage } from "./codec.js";
-import { IpcError } from "./errors.js";
-import { DEFAULT_REQUEST_TIMEOUT_MS, PendingRequests } from "./pending.js";
-import type { IpcLineTransport } from "./transport.js";
 import {
     IPC_VERSION,
     type IpcActionMessage,
@@ -19,6 +15,10 @@ import {
     type IpcMessage,
     type IpcResultMessage,
 } from "@napuketto/loader";
+import { decodeIpcMessage, encodeIpcMessage } from "./codec.js";
+import { IpcError } from "./errors.js";
+import { DEFAULT_REQUEST_TIMEOUT_MS, PendingRequests } from "./pending.js";
+import type { IpcLineTransport } from "./transport.js";
 
 /** 客户端选项。 */
 interface IpcClientOptions {

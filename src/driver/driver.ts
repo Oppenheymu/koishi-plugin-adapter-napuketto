@@ -11,6 +11,7 @@ import type { ChildProcess } from "node:child_process";
 import {
     ChildProcessIpcTransport,
     type IpcLineTransport,
+    type IpcStatusPayload,
     NapukettoIpcClient,
 } from "../ipc/index.js";
 import { backoffDelay } from "./backoff.js";
@@ -195,7 +196,7 @@ export class NapukettoDriver {
         });
     }
 
-    private handleStatus(status: { phase: string; message?: string; error?: unknown }): void {
+    private handleStatus(status: IpcStatusPayload): void {
         switch (status.phase) {
             case "ready":
                 if (this.state !== "stopping" && this.state !== "stopped") {

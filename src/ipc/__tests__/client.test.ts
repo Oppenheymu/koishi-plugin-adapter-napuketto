@@ -5,6 +5,8 @@
  * id 递增）、心跳（ping 自动回 pong）、事件分发（收窄 + 退订）、
  * result 不派发给事件订阅者。
  */
+
+import { IPC_VERSION } from "@napuketto/loader";
 import { describe, expect, it, vi } from "vitest";
 import {
     decodeIpcMessage,
@@ -13,7 +15,6 @@ import {
     NapukettoIpcClient,
 } from "../index.js";
 import { captureAction, MemoryLinePair } from "../test-utils.js";
-import { IPC_VERSION } from "@napuketto/loader";
 
 describe("NapukettoIpcClient 请求-响应", () => {
     it("action 请求 → result 成功响应", async () => {
