@@ -21,9 +21,12 @@ function makeConfig(overrides: Partial<NapukettoBotConfig> = {}): NapukettoBotCo
     };
 }
 
-/** 假 QQ 安装解析（避免本机 QQ 目录探测）。 */
-function fakeResolveQq(qqPath?: string): QqInstallInfo {
-    const exe = qqPath ?? "C:/QQ/NTQQ/QQ.exe";
+/** 假 QQ 解析（避免本机 QQ 目录探测；异步，与 LaunchResolvers.resolveQq 签名对齐）。 */
+async function fakeResolveQq(opts: {
+    qqPath: string | undefined;
+    dataRoot: string;
+}): Promise<QqInstallInfo> {
+    const exe = opts.qqPath ?? "C:/QQ/NTQQ/QQ.exe";
     return {
         qqPath: exe,
         installDir: "C:/QQ/NTQQ",
@@ -48,8 +51,8 @@ describe("resolveEntry", () => {
 });
 
 describe("resolveLaunchOptions", () => {
-    it("组装 launchSelfHost 选项（IPC 自建宿主模式）", () => {
-        const options = resolveLaunchOptions(makeConfig(), { resolveQq: fakeResolveQq });
+    it("组装 launchSelfHost 选项（IPC 自建宿主模式）", async () => {
+        const options = await resolveLaunchOptions(makeConfig(), { resolveQq: fakeResolveQq });
         expect(options.qq.qqPath).toBe("C:/QQ/NTQQ/QQ.exe");
         expect(options.kernelEntry).toBe("C:/repo/packages/kernel/dist/index.mjs");
         expect(options.cfgDir).toContain("123456789"); // 数据根/账号
@@ -62,15 +65,15 @@ describe("resolveLaunchOptions", () => {
         expect(options.configPath).toBeTypeOf("string");
     });
 
-    it("quickUin = selfId（快速登录账号）", () => {
-        const options = resolveLaunchOptions(makeConfig({ selfId: "3567141148" }), {
+    it("quickUin = selfId（快速登录账号）", async () => {
+        const options = await resolveLaunchOptions(makeConfig({ selfId: "3567141148" }), {
             resolveQq: fakeResolveQq,
         });
         expect(options.quickUin).toBe("3567141148");
     });
 
-    it("dataDir 覆盖数据根", () => {
-        const options = resolveLaunchOptions(makeConfig({ dataDir: "C:/data" }), {
+    it("dataDir 覆盖数据根", async () => {
+        const options = await resolveLaunchOptions(makeConfig({ dataDir: "C:/data" }), {
             resolveQq: fakeResolveQq,
         });
         expect(options.cwd.replaceAll("\\", "/")).toBe("C:/data");

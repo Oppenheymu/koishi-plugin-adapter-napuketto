@@ -76,6 +76,15 @@ export class ChildProcessIpcTransport extends BaseLineTransport {
         this.readline.on("line", (line) => {
             this.dispatchLine(line);
         });
+        // 子进程 stderr 透传（2026-08-14 WSL 生产排查）：wine/node 启动失败的原始错误
+        // 信息走 stderr，此前被 stdio pipe 吞掉，子进程 code=1 退出时无从诊断。
+        // 逐行透传到父进程 stderr（原始输出，不加协议语义，保留 wine 报错原文）。
+        if (child.stderr !== null) {
+            const stderrLines = createInterface({ input: child.stderr, crlfDelay: Infinity });
+            stderrLines.on("line", (line) => {
+                process.stderr.write(`[napuketto 子进程] ${line}\n`);
+            });
+        }
         // 子进程退出（正常/崩溃）→ 通知 onClose 订阅者
         child.once("close", () => {
             this.close();

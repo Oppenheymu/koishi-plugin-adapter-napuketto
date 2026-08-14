@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { resolveConfigPath, resolveDataRoot } from "@napuketto/kernel";
 import {
     defaultStubDir,
+    ensureQqFiles,
     launchSelfHost,
     type QqInstallInfo,
     resolveQqInstall,
@@ -71,19 +72,42 @@ export interface ResolvedLaunch {
     stdio: readonly ["pipe", "pipe", "pipe"];
 }
 
-/** 可注入依赖（测试用假实现，生产默认 loader 实现）。 */
+/** 可注入依赖（测试用假实现，生产默认按平台分支解析）。 */
 export interface LaunchResolvers {
-    /** QQ 安装解析（默认 resolveQqInstall；测试注入假 QQ 目录）。 */
-    resolveQq?: (qqPath?: string) => QqInstallInfo;
+    /** QQ 原生文件解析（默认按平台分支：win32 本机 / linux 下载到 ext4；测试注入假目录）。 */
+    resolveQq?: (opts: { qqPath: string | undefined; dataRoot: string }) => Promise<QqInstallInfo>;
 }
 
-/** 组装 launchSelfHost 选项（纯函数，不 spawn；deps 测试注入）。 */
-export function resolveLaunchOptions(
+/**
+ * 默认 QQ 原生文件解析（2026-08-14 WSL 生产修复：按平台分支）。
+ * win32 探测本机安装；linux/wine 直接用数据根 ext4 缓存 + 缺失自动下载——
+ * wine 读 /mnt/c（DrvFS）会 File not found（2026-08-12 实测），本机探测命中
+ * DrvFS 会导致 dlopen 失败、子进程 code=1 退出。
+ */
+async function defaultResolveQq(opts: {
+    qqPath: string | undefined;
+    dataRoot: string;
+}): Promise<QqInstallInfo> {
+    // 显式 qqPath：直接定位（尊重用户显式路径；WSL 用户应指向 ext4 路径）
+    if (opts.qqPath !== undefined && opts.qqPath !== "") {
+        return resolveQqInstall(opts.qqPath);
+    }
+    if (process.platform === "linux") {
+        return ensureQqFiles({ dataRoot: opts.dataRoot });
+    }
+    return resolveQqInstall();
+}
+
+/** 组装 launchSelfHost 选项（不 spawn；deps 测试注入）。 */
+export async function resolveLaunchOptions(
     config: NapukettoBotConfig,
     deps: LaunchResolvers = {},
-): ResolvedLaunch {
+): Promise<ResolvedLaunch> {
     const dataRoot = resolveDataRoot(config.dataDir);
-    const qq = (deps.resolveQq ?? resolveQqInstall)(config.qqPath);
+    const qq = await (deps.resolveQq ?? defaultResolveQq)({
+        qqPath: config.qqPath,
+        dataRoot,
+    });
     const cfgDir = join(dataRoot, config.selfId);
     const stubDir = config.stubDir ?? defaultStubDir();
     return {
@@ -106,7 +130,7 @@ export function buildLaunch(config: NapukettoBotConfig): DriverLauncher {
     // ⚠️ launchSelfHost 自 P2（2026-08-12，Linux/wine 分支）起为 async：必须 await，
     // 否则 child 取自 Promise 为 undefined，driver 随后在 child.once 处崩溃。
     return async () => {
-        const options = resolveLaunchOptions(config);
+        const options = await resolveLaunchOptions(config);
         const { child } = await launchSelfHost({
             qq: options.qq,
             kernelEntry: options.kernelEntry,
