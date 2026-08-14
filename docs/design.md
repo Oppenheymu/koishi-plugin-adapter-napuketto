@@ -80,20 +80,32 @@ NapukettoQQ 的自建宿主（路线 A）是**标准 Node 进程**（stub QQNT.d
 apps/koishi-plugin-adapter-napuketto/
 ├── src/
 │   ├── index.ts              # 插件入口：name / usage / Config / apply（平台注册 + console 入口）
+│   ├── constants.ts          # 协议共享常量（PRIVATE_PREFIX / CHANNEL_TYPE / BOT_STATUS，2026-08-14）
 │   ├── bot.ts                # NapukettoBot：koishi Bot 子类（平台注册、message 发送）
+│   ├── bot/                  # Bot 集成（§5.11，2026-08-14 拆分）
+│   │   ├── index.ts          #   出口（barrel）
+│   │   ├── bot.ts            #   NapukettoBot（类主体：构造/生命周期/动作方法）
+│   │   ├── message.ts        #   NapukettoMessageEncoder（koishi 元素 → internal.sendMessage）
+│   │   ├── launch.ts         #   launch 工厂（launchSelfHost 组装 + 包入口解析）
+│   │   ├── console-entry.ts  #   控制台前端入口注册（packageRoot + addEntry，模块级去重）
+│   │   ├── login-panel.ts    #   NapukettoLoginPanel（面板装配/reload 去重/指令上行）
+│   │   ├── session.ts        #   applySessionFields 纯函数（可选字段条件赋值 + elements）
+│   │   └── launch.test.ts    #   单测（配置解析纯函数，不真实 spawn）
 │   ├── driver/               # 驱动层（§5.7，已实现 2026-08-08）
 │   │   ├── index.ts          #   出口（barrel）
 │   │   ├── types.ts          #   DriverOptions/DriverEvents/DriverState/ChildProcessLike
 │   │   ├── backoff.ts        #   指数退避纯函数
-│   │   ├── driver.ts         #   NapukettoDriver：spawn/IPC/重启/健康检查
+│   │   ├── heartbeat.ts      #   HeartbeatMonitor（心跳健康监控独立类，2026-08-14 拆分）
+│   │   ├── driver.ts         #   NapukettoDriver：spawn/IPC/重启（心跳由 heartbeat.ts 负责）
 │   │   └── *.test.ts         #   单测（FakeChild + MemoryLinePair 注入，15 用例）
 │   ├── ipc/                  # IPC 协议层（§5.6，已实现 2026-08-08）
 │   │   ├── index.ts          #   出口（barrel）
 │   │   ├── types.ts          #   消息类型联合 + payload 类型（协议契约，loader 侧复用）
 │   │   ├── codec.ts          #   JSON 行编解码（encode/decode）
 │   │   ├── errors.ts         #   IpcError（协议级错误：TIMEOUT / CLOSED / 远端错误码）
+│   │   ├── pending.ts        #   PendingRequests（请求-响应匹配独立类，2026-08-14 拆分）
 │   │   ├── transport.ts      #   IpcLineTransport + ChildProcessIpcTransport
-│   │   ├── client.ts         #   NapukettoIpcClient（请求-响应 + 心跳 + 事件分发）
+│   │   ├── client.ts         #   NapukettoIpcClient（线路处理 + 心跳 + 事件分发）
 │   │   └── index.test.ts     #   单测（内存双端注入，不依赖真实子进程）
 │   ├── login/                # 登录交互层（§5.8，已实现 2026-08-08）
 │   │   ├── index.ts          #   出口（barrel）
@@ -101,11 +113,15 @@ apps/koishi-plugin-adapter-napuketto/
 │   │   ├── machine.ts        #   NapukettoLoginState：状态机 + QR 缓冲
 │   │   └── machine.test.ts   #   单测（8 用例：QR 全流程/快速直通/缓冲/重置）
 │   ├── console/              # 控制台登录面板（§5.12，2026-08-09）
-│   │   ├── index.ts          #   出口（barrel）
+│   │   ├── index.ts          #   出口（barrel，仅 re-export 有消费者符号）
 │   │   ├── types.ts          #   LoginPanelPayload（DataService 下行形状）
 │   │   ├── payload.ts        #   快照 → payload 纯函数映射（可单测）
 │   │   ├── provider.ts       #   NapukettoLoginProvider（DataService + relogin listener）
 │   │   └── payload.test.ts   #   单测（纯函数映射）
+│   ├── database/             # 数据库操作集中管理（§5.13，2026-08-09）
+│   │   ├── index.ts          #   NapukettoDatabase（channel/user 原子预热）
+│   │   ├── serial-queue.ts   #   SerialQueue（per-key 串行队列独立类，2026-08-14 拆分）
+│   │   └── __tests__/        #   单测
 │   ├── events/               # 事件桥（§5.9，已实现 2026-08-08，地基验证点）
 │   │   ├── index.ts          #   出口（barrel）
 │   │   ├── types.ts          #   EventBridgeOptions / NapukettoSessionFields
@@ -129,7 +145,11 @@ apps/koishi-plugin-adapter-napuketto/
 │   └── config.ts             # Config schema（koishi Schema）
 ├── client/                   # 控制台前端（§5.12，2026-08-09）
 │   ├── index.ts              #   入口：注册 plugin-details slot → Settings 组件
-│   ├── settings.vue          #   扫码登录面板（状态/二维码/重新登录）
+│   ├── settings.vue          #   扫码登录面板（状态分发 + 共享状态；2026-08-14 拆分）
+│   ├── components/           #   面板子组件（2026-08-14 拆分，fallow template 复杂度）
+│   │   ├── QrCodePanel.vue   #     waiting_scan：二维码 + 过期遮罩 + 刷新/打开链接
+│   │   └── StatusSection.vue #     idle/scanned/logged_in/failed：文案 + 重新登录
+│   ├── types/                #   前端类型声明（koishijs-client.d.ts / shims.d.ts）
 │   └── tsconfig.json         #   前端独立 tsconfig（@koishijs/client/global 类型）
 ├── scripts/
 │   └── build-client.mjs      # client → dist 构建（vite，等价 @koishijs/client yakumo）

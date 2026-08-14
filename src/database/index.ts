@@ -27,6 +27,7 @@
  */
 
 import type { Context } from "koishi";
+import { SerialQueue } from "./serial-queue.js";
 
 /** channel 预热字段（dispatch 前 session 字段子集）。 */
 export interface EnsureChannelData {
@@ -52,8 +53,8 @@ const USER_KEY = "user:";
 
 /** 数据库操作集中管理（无全局单例，每 bot 实例一份）。 */
 export class NapukettoDatabase {
-    /** per-key 串行链（key = `channel:platform:id` / `user:platform:id`）。 */
-    private readonly chains = new Map<string, Promise<void>>();
+    /** per-key 串行链（serial-queue.ts 独立类：同 key 串行、异 key 并行）。 */
+    private readonly queue = new SerialQueue();
     /** 降级/失败告警已打标记（每实例只打一次，防刷屏）。 */
     private warned = false;
 
@@ -72,7 +73,7 @@ export class NapukettoDatabase {
      * 并行。返回 promise 在预热完成（或降级跳过）后 resolve，绝不 reject。
      */
     ensureChannel(data: EnsureChannelData): Promise<void> {
-        return this.enqueue(`${CHANNEL_KEY}${data.platform}:${data.id}`, () =>
+        return this.queue.enqueue(`${CHANNEL_KEY}${data.platform}:${data.id}`, () =>
             this.runEnsureChannel(data),
         );
     }
@@ -87,23 +88,9 @@ export class NapukettoDatabase {
         if (data.authority === 0) {
             return Promise.resolve();
         }
-        return this.enqueue(`${USER_KEY}${data.platform}:${data.userId}`, () =>
+        return this.queue.enqueue(`${USER_KEY}${data.platform}:${data.userId}`, () =>
             this.runEnsureUser(data),
         );
-    }
-
-    /** 串行排队执行（同 key 串行、异 key 并行；前序失败不阻塞后续）。 */
-    private enqueue(key: string, task: () => Promise<void>): Promise<void> {
-        const prev = this.chains.get(key) ?? Promise.resolve();
-        const next = prev.catch(() => undefined).then(task);
-        this.chains.set(key, next);
-        // 链尾完成后清理（无新任务排队时删除引用，防 Map 无限增长）
-        void next.finally(() => {
-            if (this.chains.get(key) === next) {
-                this.chains.delete(key);
-            }
-        });
-        return next;
     }
 
     /** 实际预热 channel：命中即返回；未命中 upsert（幂等，并发安全）。 */

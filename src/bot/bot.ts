@@ -18,14 +18,11 @@
  * 只按 Bot 基类能力使用，无需 koishi 特有 API。
  */
 
-import { readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { Context } from "@satorijs/core";
 import { Bot, h, type Context as KoishiContext, type MessageEncoder, type Universal } from "koishi";
 import { NapukettoInternal } from "../actions/index.js";
 import { type LogLevel, type NapukettoBotConfig, napukettoConfigSchema } from "../config.js";
-import { loginServiceId, NapukettoLoginProvider, toLoginPanelPayload } from "../console/index.js";
+import { BOT_STATUS, CHANNEL_TYPE, PRIVATE_PREFIX } from "../constants.js";
 import { NapukettoDatabase } from "../database/index.js";
 import { NapukettoDriver } from "../driver/index.js";
 import type { HFn } from "../events/elements.js";
@@ -33,15 +30,9 @@ import { NapukettoEventBridge, type NapukettoSessionFields } from "../events/ind
 import type { NapukettoIpcClient } from "../ipc/index.js";
 import { NapukettoLoginState } from "../login/index.js";
 import { buildLaunch } from "./launch.js";
+import { NapukettoLoginPanel } from "./login-panel.js";
 import { NapukettoMessageEncoder } from "./message.js";
-
-/** 私聊 channelId 前缀（napcat 同构）。 */
-const PRIVATE_PREFIX = "private:";
-
-// protocol 常量（const enum，verbatimModuleSyntax 禁直接访问）：
-// Channel.Type：TEXT=0 / DIRECT=1；Status：CONNECT=2 / DISCONNECT=3
-const CHANNEL_TYPE = { TEXT: 0, DIRECT: 1 } as const;
-const BOT_STATUS = { CONNECT: 2, DISCONNECT: 3 } as const;
+import { applySessionFields } from "./session.js";
 
 /** logLevel 配置 → reggol 数字（reggol：DEBUG=3 / INFO=2 / ERROR=1 / SILENT=0）。 */
 const LOG_LEVEL_MAP: Record<LogLevel, number> = {
@@ -50,62 +41,6 @@ const LOG_LEVEL_MAP: Record<LogLevel, number> = {
     error: 1,
     silent: 0,
 };
-
-// ── 控制台前端入口（design.md §5.12，模块级去重：多 bot 实例只注册一次） ──
-
-let consoleEntryRegistered = false;
-
-/**
- * 包根目录（定位 client/ 与 dist/）。
- *
- * ⚠️ 2026-08-14 修复（二维码不显示根因）：bundle（lib/index.cjs，深 1 层）与
- * 源码（src/bot/bot.ts，深 2 层）的文件深度不同，`new URL("../..")` 只对源码
- * 形态正确；且 esbuild 转译 CJS 时把 import.meta.url shim 成可用（try 不抛错），
- * __dirname 兜底分支永远走不到——最终 dev/prod 入口被注册到 node_modules 根
- * （路径不存在），控制台面板永不挂载。改为逐级上溯找 package.json（校验包名），
- * bundle 与源码两种形态均正确。
- */
-function packageRoot(): string {
-    let dir: string;
-    try {
-        dir = fileURLToPath(new URL(".", import.meta.url));
-    } catch {
-        dir = __dirname;
-    }
-    for (let i = 0; i < 5; i += 1) {
-        try {
-            const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as {
-                name?: string;
-            };
-            if (pkg.name === "koishi-plugin-adapter-napuketto") {
-                return dir;
-            }
-        } catch {
-            // 该层无 package.json（或不可读），继续上溯
-        }
-        dir = dirname(dir);
-    }
-    throw new Error("[napuketto] 无法定位插件包根目录（未找到 package.json）");
-}
-
-/** 注册控制台登录面板前端入口（dev 由 koishi dev 动态编译；prod 走 vite 产物 dist）。 */
-function registerConsoleEntry(ctx: KoishiContext): void {
-    if (consoleEntryRegistered) {
-        return;
-    }
-    consoleEntryRegistered = true;
-    const root = packageRoot();
-    console.log(
-        "[napuketto] registerConsoleEntry: addEntry dev=" +
-            resolve(root, "client/index.ts") +
-            " prod=" +
-            resolve(root, "dist"),
-    );
-    ctx.console.addEntry({
-        dev: resolve(root, "client/index.ts"),
-        prod: resolve(root, "dist"),
-    });
-}
 
 /** NapukettoQQ 的 koishi Bot（平台 "napuketto"）。
  *
@@ -133,8 +68,8 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
 
     /** 当前 IPC 客户端引用（driver 重启后换实例，onReady 更新）。 */
     private readonly clientRef: { current: NapukettoIpcClient | null } = { current: null };
-    /** 控制台登录面板 provider（console 服务就绪后装配；重启/重载前 null）。 */
-    private readonly panelRef: { current: NapukettoLoginProvider | null } = { current: null };
+    /** 控制台登录面板（console 服务就绪后装配；自 bot.ts 拆出，login-panel.ts）。 */
+    private readonly panel: NapukettoLoginPanel;
     private driver: NapukettoDriver | null = null;
     private readonly login: NapukettoLoginState;
     private readonly bridge: NapukettoEventBridge;
@@ -163,57 +98,42 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
                     this.user.name = self.nick;
                 }
                 this.logger.debug("[napuketto] 登录状态: %s", state);
-                this.pushLoginPanel();
+                this.panel.push();
             },
             onQrChange: (_qr) => {
                 this.logger.debug("[napuketto] 二维码更新");
-                this.pushLoginPanel();
+                this.panel.push();
             },
             onError: (error) => {
                 this.logger.warn("[napuketto] 登录错误: %o", error);
-                this.pushLoginPanel();
+                this.panel.push();
             },
         });
 
-        // 控制台登录面板（console 服务就绪后装配；satorijs Context → koishi
-        // Context cast——运行时同一实例，仅类型收窄）。
-        (this.ctx as unknown as KoishiContext).inject(["console"], (ctx) => {
-            this.logger.info("[napuketto] console 服务就绪，开始装配控制台登录面板");
-            registerConsoleEntry(ctx);
-            const serviceName = `console.services.${loginServiceId(config.selfId)}`;
-            // reload 去重：root store 不随插件 dispose 自动清理，若同 selfId
-            // 服务已注册（上一次 apply 未清理干净），直接复用旧 provider。
-            const existing = ctx.root.get(serviceName) as NapukettoLoginProvider | undefined;
-            if (existing !== undefined) {
-                this.panelRef.current = existing;
-                this.pushLoginPanel();
-                return;
-            }
-            const provider = new NapukettoLoginProvider(ctx, {
-                selfId: config.selfId,
-                onRelogin: () => this.requestRelogin(),
-                onRefreshQr: () => void this.requestRefreshQr(),
-            });
-            this.panelRef.current = provider;
-            // 注册服务值到 root store（Client.refresh() 的 PULL 读 root store）；
-            // 拿 set 返回的 dispose 函数，在 bot dispose 时调用——既清理 store
-            // 又从 root scope.disposables 移除自身（reload 不报错、不泄漏）。
-            const disposeService = ctx.root.set(serviceName, provider);
-            // 兜底：登录是自动启动的，二维码/状态在控制台客户端连接前就推送完，
-            // 被 DataService.refresh() → broadcast 的 `if (!handles.length) return`
-            // 丢弃。console/connection 事件在 console 服务自身 ctx 上发出，需在
-            // 该 ctx 上监听（inject fork 作用域是兄弟分支，收不到），客户端连接
-            // 瞬间再推一次，确保控制台打开即回放最新登录快照（含二维码）。
-            const offConnection = ctx.console.ctx.on("console/connection", () => {
-                this.pushLoginPanel();
-            });
-            ctx.on("dispose", () => {
-                disposeService();
-                offConnection();
-            });
-            // 装配完成立即推送当前快照（面板打开即有状态，不必等下次变化）
-            this.pushLoginPanel();
+        // 控制台登录面板（login-panel.ts 独立类：装配/reload 去重/连接回放/
+        // 指令上行全封装；deps 只暴露 selfId + 快照 + IPC 能力，bot 不碰细节）
+        this.panel = new NapukettoLoginPanel({
+            selfId: config.selfId,
+            getSnapshot: () => this.login.snapshot,
+            sendControl: (payload) => {
+                const client = this.clientRef.current;
+                if (client === null) {
+                    return false;
+                }
+                client.sendControl(payload);
+                return true;
+            },
+            request: async (action, params) => {
+                const client = this.clientRef.current;
+                if (client === null) {
+                    throw new Error("Napuketto 子进程未就绪（等待驱动连接）");
+                }
+                return client.request(action, params);
+            },
+            logger: this.logger,
         });
+        // satorijs Context → koishi Context cast——运行时同一实例，仅类型收窄
+        this.panel.setup(this.ctx as unknown as KoishiContext);
 
         // 数据库操作集中管理（design.md §5.13）：dispatch 前原子预热 channel/user，
         // 消除 koishi get-or-create 并发撞唯一键（channel 与 binding 同源，issue
@@ -304,9 +224,7 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
         // 2026-08-14 实测「拉取登录信息失败: 未知动作: login.getSelf」）。
         const self = this.login.snapshot.self;
         if (self !== undefined) {
-            this.user ??= {} as Universal.User;
-            this.user.id = self.uin;
-            this.user.name = self.nick;
+            this.syncUser({ uin: self.uin, nick: self.nick });
             this.selfId = self.uin;
             return this.toJSON();
         }
@@ -315,13 +233,23 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
             | { uin?: string; nickname?: string }
             | undefined;
         if (data !== undefined && data !== null) {
-            this.user ??= {} as Universal.User;
             if (typeof data.uin === "string" && data.uin !== "") {
                 this.selfId = data.uin;
             }
-            this.user.name = data.nickname ?? this.user.name ?? "";
+            this.syncUser({ uin: data.uin, nick: data.nickname });
         }
         return this.toJSON();
+    }
+
+    /** 同步 user 字段（selfId 可能为空的场景下保留既有值）。 */
+    private syncUser(partial: { uin?: string | undefined; nick?: string | undefined }): void {
+        this.user ??= {} as Universal.User;
+        if (partial.uin !== undefined && partial.uin !== "") {
+            this.user.id = partial.uin;
+        }
+        if (partial.nick !== undefined && partial.nick !== "") {
+            this.user.name = partial.nick;
+        }
     }
 
     /** 好友列表（kernel Friend { uin, nickname } → Universal.Friend）。 */
@@ -449,78 +377,12 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
         });
     }
 
-    /** 登录快照 → 控制台面板推送（provider 未装配时静默跳过）。 */
-    private pushLoginPanel(): void {
-        const provider = this.panelRef.current;
-        if (provider === null) {
-            // 诊断：provider 未装配 = console inject 回调尚未触发（root cause A）
-            this.logger.debug(
-                "[napuketto] pushLoginPanel: provider 未装配（console 未就绪），跳过推送",
-            );
-            return;
-        }
-        const payload = toLoginPanelPayload(this.login.snapshot, this.config.selfId);
-        this.logger.debug("[napuketto] pushLoginPanel: 推送登录面板 state=%s", payload.state);
-        provider.update(payload);
-    }
-
-    /** 重新登录：重启子进程重新走登录流程（快速登录优先、QR 兜底）。 */
-    private requestRelogin(): void {
-        const client = this.clientRef.current;
-        if (client !== null) {
-            this.logger.info("[napuketto] 控制台请求重新登录（重启子进程）");
-            client.sendControl({ command: "restart" });
-        } else {
-            this.logger.warn("[napuketto] 子进程未就绪，无法重新登录");
-        }
-    }
-
-    /** 刷新二维码：IPC 直达子进程内 kernel 的 QrLoginSession.refresh()（不重启子进程）。 */
-    private async requestRefreshQr(): Promise<void> {
-        const client = this.clientRef.current;
-        if (client === null) {
-            this.logger.warn("[napuketto] 子进程未就绪，无法刷新二维码");
-            return;
-        }
-        try {
-            const triggered = await client.request("login.refreshQr");
-            this.logger.info(
-                "[napuketto] 刷新二维码: %s",
-                triggered === true ? "已触发新二维码" : "当前不在扫码态（忽略）",
-            );
-        } catch (error) {
-            this.logger.warn("[napuketto] 刷新二维码失败: %o", error);
-        }
-    }
-
     /** kernel 事件 session 字段 → koishi session → dispatch。 */
     private async dispatchSession(fields: NapukettoSessionFields): Promise<void> {
-        // ⚠️ 原子预热 channel（design.md §5.13）：koishi getChannel 是 check-then-act
-        //（SELECT → 未命中 INSERT），多条消息同 tick dispatch 时并发撞 (id, platform)
-        // 唯一键（2026-08-09 实测：同批 4 条 → 1 成功 + 3 次 UNIQUE constraint failed；
-        // 框架侧根因见 koishijs/koishi#1545）。预热后 koishi SELECT 必命中，永远走不到
-        // createChannel。预热失败不阻断派发（koishi get-or-create 兜底）；
-        // autoAssign=false 保持 koishi 不落库语义。
-        if (this.autoAssign && fields.channelId !== undefined) {
-            await this.database.ensureChannel({
-                platform: fields.platform,
-                id: fields.channelId,
-                ...(fields.guildId !== undefined ? { guildId: fields.guildId } : {}),
-                // assignee 仅非空 selfId（koishi autoAssign 语义：空串不落库）
-                ...(fields.selfId !== "" ? { assignee: fields.selfId } : {}),
-            });
-        }
-        // ⚠️ 原子预热 user（2026-08-09）：session.getUser 同样 check-then-act，未命中
-        // createUser → create('binding') 撞 (pid, platform) 主键（与 channel 冲突同源，
-        // issue #1545 user 侧）。binding 预热后 koishi getUser 必命中。userId 缺省
-        //（如系统事件）跳过；autoAuthorize=0 时 koishi 不落库，ensureUser 内部跳过。
-        if (fields.userId !== undefined && fields.userId !== "") {
-            await this.database.ensureUser({
-                platform: fields.platform,
-                userId: fields.userId,
-                authority: this.autoAuthorize,
-            });
-        }
+        // 原子预热 channel/user（design.md §5.13，2026-08-09 并发竞态修复）：
+        // 预热后 koishi SELECT 必命中，永远走不到 get-or-create 的并发 INSERT
+        //（根因 koishijs/koishi#1545）。预热失败不阻断派发（框架兜底）。
+        await this.preheat(fields);
         const session = this.session({
             type: fields.type,
             // exactOptionalPropertyTypes：可选字段条件展开，不显式赋 undefined
@@ -529,29 +391,9 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
             platform: fields.platform,
             timestamp: fields.timestamp,
         });
-        if (fields.userId !== undefined) {
-            session.userId = fields.userId;
-        }
-        if (fields.channelId !== undefined) {
-            session.channelId = fields.channelId;
-        }
-        if (fields.guildId !== undefined) {
-            session.guildId = fields.guildId;
-        }
-        if (fields.messageId !== undefined) {
-            session.messageId = fields.messageId;
-        }
-        // 私聊/群聊判定（event.channel.type = DIRECT/TEXT；不设则 isDirect 恒 false，
-        // 私聊消息会被当群聊路由——onebot 实证）
-        if (fields.isDirect !== undefined) {
-            session.isDirect = fields.isDirect;
-        }
-        // ⚠️ 只设 elements：satorijs content 是 getter（elements.join("") 派生）；
-        // 若设 session.content 会走 setter → h.parse(value) 覆盖 elements（结构化
-        // 元素丢失，含特殊字符时 parse 可能抛错 → dispatch 失败）。
-        if (fields.elements !== undefined) {
-            session.elements = fields.elements as h[];
-        }
+        // 可选字段赋值 + elements 特殊处理（content 由 satorijs getter 派生）——
+        // 抽到 session.ts 纯函数（可单测，exactOptionalPropertyTypes 条件展开）
+        applySessionFields(session, fields);
         // 消息路径关键日志（info，默认可见）：session 字段 + 渲染后文本
         this.logger.info(
             "[napuketto] dispatch: type=%s channel=%s user=%s isDirect=%s msg=%s",
@@ -562,6 +404,36 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
             fields.elements?.join("") ?? "",
         );
         this.dispatch(session);
+    }
+
+    /**
+     * 原子预热 channel/user（dispatch 前）。
+     *
+     * ⚠️ channel（2026-08-09）：koishi getChannel 是 check-then-act（SELECT →
+     * 未命中 INSERT），多条消息同 tick dispatch 时并发撞 (id, platform) 唯一键
+     *（实测同批 4 条 → 1 成功 + 3 次 UNIQUE constraint failed；框架侧根因
+     * koishijs/koishi#1545）。autoAssign=false 保持 koishi 不落库语义。
+     * ⚠️ user：session.getUser 同样 check-then-act，未命中 createUser →
+     * create('binding') 撞 (pid, platform) 主键（issue #1545 user 侧）。
+     * userId 缺省（如系统事件）跳过；autoAuthorize=0 时 koishi 不落库。
+     */
+    private async preheat(fields: NapukettoSessionFields): Promise<void> {
+        if (this.autoAssign && fields.channelId !== undefined) {
+            await this.database.ensureChannel({
+                platform: fields.platform,
+                id: fields.channelId,
+                ...(fields.guildId !== undefined ? { guildId: fields.guildId } : {}),
+                // assignee 仅非空 selfId（koishi autoAssign 语义：空串不落库）
+                ...(fields.selfId !== "" ? { assignee: fields.selfId } : {}),
+            });
+        }
+        if (fields.userId !== undefined && fields.userId !== "") {
+            await this.database.ensureUser({
+                platform: fields.platform,
+                userId: fields.userId,
+                authority: this.autoAuthorize,
+            });
+        }
     }
 }
 

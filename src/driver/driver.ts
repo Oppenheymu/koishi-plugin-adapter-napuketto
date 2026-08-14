@@ -14,6 +14,7 @@ import {
     NapukettoIpcClient,
 } from "../ipc/index.js";
 import { backoffDelay } from "./backoff.js";
+import { HeartbeatMonitor } from "./heartbeat.js";
 import type {
     ChildProcessLike,
     DriverEvents,
@@ -58,7 +59,7 @@ export class NapukettoDriver {
     private restartCount = 0;
     private stopping = false;
     private spawnAt = 0;
-    private healthTimer: NodeJS.Timeout | null = null;
+    private readonly heartbeat: HeartbeatMonitor;
     private restartTimer: NodeJS.Timeout | null = null;
     private stopTimer: NodeJS.Timeout | null = null;
 
@@ -72,6 +73,23 @@ export class NapukettoDriver {
             backoffFactor: options.restart?.backoffFactor ?? DEFAULT_RESTART.backoffFactor,
         };
         this.heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? 45_000;
+        // 心跳监控（heartbeat.ts 独立类：轮询 seenAt，失联回调 kill + 重启）。
+        // driver 只提供采样源（client.seenAt/spawnAt/state）与失联处理。
+        this.heartbeat = new HeartbeatMonitor(
+            {
+                seenAt: () => this.client?.seenAt ?? 0,
+                spawnAt: () => this.spawnAt,
+                state: () => this.state,
+            },
+            {
+                intervalMs: HEALTH_CHECK_INTERVAL_MS,
+                timeoutMs: this.heartbeatTimeoutMs,
+                onStale: () => {
+                    this.killChild();
+                    this.handleChildExit(null, "SIGKILL", "stale");
+                },
+            },
+        );
     }
 
     /** 当前状态。 */
@@ -105,7 +123,7 @@ export class NapukettoDriver {
         this.stopping = true;
         this.setState("stopping");
         this.clearRestartTimer();
-        this.clearHealthTimer();
+        this.heartbeat.stop();
 
         const current = this.client;
         if (current === null) {
@@ -155,7 +173,7 @@ export class NapukettoDriver {
 
         this.spawnAt = Date.now();
         this.setState("booting");
-        this.startHealthCheck();
+        this.heartbeat.start();
     }
 
     private subscribeClient(client: NapukettoIpcClient): void {
@@ -231,38 +249,10 @@ export class NapukettoDriver {
         }, delay);
     }
 
-    private startHealthCheck(): void {
-        this.clearHealthTimer();
-        this.healthTimer = setInterval(() => {
-            if (this.stopping || this.state === "failed" || this.state === "restarting") {
-                return;
-            }
-            const client = this.client;
-            if (client === null) {
-                return;
-            }
-            // 距最后一条消息超时 → 判定失联（兜 dlopen/登录卡死：
-            // 从未收到消息时用 spawn 时间兜底，spawn 后无任何消息同样判失联）
-            const lastSeen = client.seenAt;
-            const reference = lastSeen > 0 ? lastSeen : this.spawnAt;
-            if (reference > 0 && Date.now() - reference > this.heartbeatTimeoutMs) {
-                this.killChild();
-                this.handleChildExit(null, "SIGKILL", "stale");
-            }
-        }, HEALTH_CHECK_INTERVAL_MS);
-    }
-
     private killChild(): void {
         const child = this.child;
         if (child !== null) {
             child.kill();
-        }
-    }
-
-    private clearHealthTimer(): void {
-        if (this.healthTimer !== null) {
-            clearInterval(this.healthTimer);
-            this.healthTimer = null;
         }
     }
 
@@ -279,6 +269,7 @@ export class NapukettoDriver {
             clearTimeout(this.stopTimer);
             this.stopTimer = null;
         }
+        this.heartbeat.stop();
         this.client?.close();
         this.client = null;
         this.child = null;

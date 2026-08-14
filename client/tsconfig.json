@@ -17,7 +17,7 @@
         "types": [],
         "paths": {
             "@koishijs/client": [
-                "./koishijs-client.d.ts"
+                "./types/koishijs-client.d.ts"
             ]
         },
         "strict": true,

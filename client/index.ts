@@ -6,7 +6,7 @@
  * 由 @koishijs/client 的构建链编译（dev 走 koishi dev；prod 走 vite 打包）。
  */
 import Settings from './settings.vue';
-import type { Context } from '@koishijs/client';
+import type { Context } from './types/koishijs-client';
 
 export default (ctx: Context) =>
 {

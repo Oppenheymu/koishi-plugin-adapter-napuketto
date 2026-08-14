@@ -1,5 +1,30 @@
 # koishi-plugin-adapter-napuketto
 
+## 0.0.13
+
+### Patch Changes
+
+- refactor: 按 fallow 静态分析重构，消灭全部死代码并拆分大文件（行为不变，全量单测 489 通过）
+
+  - **拆分 godfile**：`bot.ts`（602 行 → 475 行）拆出 `bot/console-entry.ts`（前端入口注册）、
+    `bot/login-panel.ts`（控制台面板装配/指令上行）、`bot/session.ts`（session 字段赋值纯函数）、
+    `src/constants.ts`（协议共享常量）；`driver.ts` 拆出 `driver/heartbeat.ts`（心跳监控独立类）；
+    `ipc/client.ts` 拆出 `ipc/pending.ts`（请求-响应匹配）；`database/index.ts` 拆出
+    `database/serial-queue.ts`（per-key 串行队列）
+  - **前端拆分**：`settings.vue`（363 行 → 217 行）template 拆成 `client/components/QrCodePanel.vue`
+    （二维码块）与 `client/components/StatusSection.vue`（状态块），fallow template 复杂度
+    CRITICAL → 移除
+  - **死代码清理**：`console/provider.ts` 移除 6 个无消费者导出（`LOGIN_SERVICE_PREFIX`、
+    `RELOGIN_EVENT_SUFFIX`、`REFRESH_QR_EVENT_SUFFIX`、`reloginEventName`、`refreshQrEventName`、
+    `LoginPanelOptions`），`console/index.ts` barrel 收窄；fallow dead files 3.2% → 0%、
+    dead exports 8.6% → 0%，MI 91.4 → 92.7
+  - **复杂度**：`dispatchSession` CRAP 306 → 132（预热逻辑拆 `preheat()`），`getLogin` CRAP
+    110 → 消除；`dispatchSession`/`getLogin` 均不再 CRITICAL
+  - **误报豁免**：`.fallowrc.jsonc` 标记 `client/**` 为动态入口（控制台 addEntry 注册，静态
+    分析看不到）+ `provider.get` 为 DataService 抽象实现豁免
+  - **顺带修复**：`QrCodePanel.vue` template 引用未定义的 `qrUrl`（改为 `qr?.qrcodeUrl`）
+  - 前端类型声明文件迁移到 `client/types/`（`koishijs-client.d.ts`/`shims.d.ts`）
+
 ## 0.0.12
 
 ### Patch Changes

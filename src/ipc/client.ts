@@ -10,6 +10,7 @@
 
 import { decodeIpcMessage, encodeIpcMessage } from "./codec.js";
 import { IpcError } from "./errors.js";
+import { DEFAULT_REQUEST_TIMEOUT_MS, PendingRequests } from "./pending.js";
 import type { IpcLineTransport } from "./transport.js";
 import {
     IPC_VERSION,
@@ -18,17 +19,6 @@ import {
     type IpcMessage,
     type IpcResultMessage,
 } from "./types.js";
-
-/** 动作请求默认超时（毫秒）。 */
-const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
-
-/** pending 请求条目。 */
-interface PendingRequest {
-    action: string;
-    resolve: (value: unknown) => void;
-    reject: (error: unknown) => void;
-    timer: NodeJS.Timeout;
-}
 
 /** 客户端选项。 */
 interface IpcClientOptions {
@@ -39,8 +29,7 @@ interface IpcClientOptions {
 /** 心跳采样：子进程发 ping → 自动回 pong。 */
 export class NapukettoIpcClient {
     private readonly handlers = new Map<IpcMessage["type"], Set<(message: unknown) => void>>();
-    private readonly pending = new Map<number, PendingRequest>();
-    private nextId = 1;
+    private readonly pending = new PendingRequests();
     private lastPingAt = 0;
     private lastPongAt = 0;
     private lastSeenAt = 0;
@@ -109,18 +98,12 @@ export class NapukettoIpcClient {
         if (this.closed) {
             return Promise.reject(new IpcError("IPC 通道已关闭", "CLOSED"));
         }
-        const id = this.nextId++;
         const timeout = timeoutMs ?? this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
-        return new Promise<unknown>((resolve, reject) => {
-            const timer = setTimeout(() => {
-                this.pending.delete(id);
-                reject(new IpcError(`动作超时（${timeout}ms）: ${action}`, "TIMEOUT"));
-            }, timeout);
-            this.pending.set(id, { action, resolve, reject, timer });
-            const payload: IpcActionMessage["payload"] =
-                params === undefined ? { action } : { action, params };
-            this.send({ v: IPC_VERSION, type: "action", id, payload });
-        });
+        const { id, promise } = this.pending.add(action, timeout);
+        const payload: IpcActionMessage["payload"] =
+            params === undefined ? { action } : { action, params };
+        this.send({ v: IPC_VERSION, type: "action", id, payload });
+        return promise;
     }
 
     /** 发送控制指令（stop / restart / login）。 */
@@ -134,7 +117,7 @@ export class NapukettoIpcClient {
             return;
         }
         this.closed = true;
-        this.rejectAllPending();
+        this.pending.rejectAll();
         this.transport.close();
     }
 
@@ -169,24 +152,13 @@ export class NapukettoIpcClient {
     }
 
     private handleResult(message: IpcResultMessage): void {
-        const pending = this.pending.get(message.id);
-        if (pending === undefined) {
-            return; // 迟到的响应：忽略
-        }
-        this.pending.delete(message.id);
-        clearTimeout(pending.timer);
         const payload = message.payload;
         if (payload.ok) {
-            pending.resolve(payload.value);
+            this.pending.resolve(message.id, payload.value);
         } else {
             // 诊断（2026-08-09）：错误消息带上 action 名，方便日志反查
             // 是哪个动作失败（子进程完整堆栈见 boot 日志）。
-            pending.reject(
-                new IpcError(
-                    `动作 ${pending.action} 失败: ${payload.error.message}`,
-                    payload.error.code,
-                ),
-            );
+            this.pending.reject(message.id, payload.error);
         }
     }
 
@@ -195,15 +167,7 @@ export class NapukettoIpcClient {
             return;
         }
         this.closed = true;
-        this.rejectAllPending();
-    }
-
-    private rejectAllPending(): void {
-        for (const pending of this.pending.values()) {
-            clearTimeout(pending.timer);
-            pending.reject(new IpcError("IPC 通道已关闭", "CLOSED"));
-        }
-        this.pending.clear();
+        this.pending.rejectAll();
     }
 
     private dispatch(message: IpcMessage): void {

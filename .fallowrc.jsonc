@@ -4,6 +4,12 @@
     // 本文件在子仓库根（apps/koishi-plugin-adapter/），fallow 自动发现
     // （子仓库内运行 `pnpm dlx fallow` 时优先于主仓库根配置）。
     "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+    // 动态加载入口（2026-08-14 豁免）：client/ 是控制台前端，经
+    // `ctx.console.addEntry` 动态注册（src/bot/console-entry.ts），静态分析
+    // 看不到引用——fallow 误报 unused-files，标记为动态入口即正确。
+    "dynamicallyLoaded": [
+        "client/**"
+    ],
     // 顶层规则豁免（有意设计，勿删）：
     //  - dev-dependencies-in-production：@napuketto/kernel、@napuketto/loader 刻意放
     //    devDependencies——发布形态自包含（tsdown 把 @napuketto/* bundle 进
@@ -23,12 +29,16 @@
     //    fallow 流分析漏报（实际有消费者）
     //  - src/driver/driver.ts：restartAttempts 是测试断言（driver-restart.test.ts）
     //    + 诊断用公共 getter
+    //  - src/console/provider.ts：NapukettoLoginProvider.get 是 DataService 抽象
+    //    方法实现（koishi 控制台 PULL 路径框架调用），fallow 继承感知只覆盖
+    //    同仓库 extends 链，跨包基类（@koishijs/plugin-console）分析不到
     "overrides": [
         {
             "files": [
                 "src/bot/bot.ts",
                 "src/ipc/client.ts",
-                "src/driver/driver.ts"
+                "src/driver/driver.ts",
+                "src/console/provider.ts"
             ],
             "rules": {
                 "unused-class-members": "off"
