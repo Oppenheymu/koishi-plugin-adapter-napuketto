@@ -297,8 +297,20 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
         await this.internal.deleteMessage(_channelId, messageId);
     }
 
-    /** 登录信息（getSelf → user → toJSON）。 */
+    /** 登录信息（优先本地登录快照 self；缺省走 IPC login.getSelf 兜底）。 */
     override async getLogin(): Promise<Universal.Login> {
+        // 登录成功时 kernel 已推送 selfInfo（sendLogin logged_in → snapshot.self），
+        // 直接本地取，无需 IPC 往返（IPC getSelf 在动作表合并前会报未知动作，
+        // 2026-08-14 实测「拉取登录信息失败: 未知动作: login.getSelf」）。
+        const self = this.login.snapshot.self;
+        if (self !== undefined) {
+            this.user ??= {} as Universal.User;
+            this.user.id = self.uin;
+            this.user.name = self.nick;
+            this.selfId = self.uin;
+            return this.toJSON();
+        }
+        // 兜底：IPC login.getSelf（子进程动作表已合并时可用）
         const data = (await this.internal.getSelf()) as
             | { uin?: string; nickname?: string }
             | undefined;
