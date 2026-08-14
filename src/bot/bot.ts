@@ -533,4 +533,24 @@ function adaptH(koishiH: typeof h): HFn {
 export namespace NapukettoBot {
     export const Config = napukettoConfigSchema;
     export type Config = NapukettoBotConfig;
+
+    /**
+     * 控制台插件详情页 usage（2026-08-14 根因修复）。
+     *
+     * ⚠️ 必须挂到类上（namespace 声明合并 → 静态属性），不能放在 index.ts 的
+     * 模块级导出：koishi loader 的 `unwrapExports = module?.default || module`
+     * 会把 `export default NapukettoBot` 解包成类本身，丢弃模块级 `usage`/`name`
+     * 导出 → 控制台 `PackageProvider.parseExports` 读 `exports?.usage` 恒
+     * undefined → 插件详情页不显示「本插件提供了…」说明。bilibili-dm 没有
+     * default export（apply 函数插件），module 整体返回，usage 才保留。
+     */
+    export const usage = `
+<div style="border-radius: 10px; border: 1px solid #ddd; padding: 16px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+  <h2 style="margin-top: 0; color: #4a6ee0;">🖥️ NapukettoQQ 适配器</h2>
+  <p>自研 QQ NT <strong>wrapper.node</strong> 协议层，无需 NapCat。</p>
+  <p>每个 <code>bots</code> 配置项启动一个自建宿主子进程（dlopen wrapper.node + stub
+  QQNT.dll），经 IPC 与 koishi 通信。配置 <code>selfId</code> 为登录 QQ 号即可；
+  登录二维码在插件详情页实时展示（控制台安装后可见）。</p>
+</div>
+`;
 }

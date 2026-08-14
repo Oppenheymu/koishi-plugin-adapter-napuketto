@@ -114,12 +114,12 @@ export class NapukettoLoginProvider extends DataService<LoginPanelPayload> {
     /** DataService 抽象方法：前端 store 请求时返回当前快照。 */
     override async get(): Promise<LoginPanelPayload> {
         // 诊断：控制台客户端连接时 Client.refresh() 会调 get()（PULL 路径）。
-        // 若这行不出现 = 服务值未注册 / 客户端没拉取到本服务。
-        console.log(
-            "[napuketto] get() 被调用（前端拉取）: state=" +
-                this.payload.state +
-                " qr=" +
-                (this.payload.qr !== undefined),
+        // 若这行不出现 = 服务值未注册到 root store / 客户端没拉取到本服务。
+        // 用 logger（而非 console.log）确保 koishi 日志里可见。
+        this.ctx.logger.info(
+            "[napuketto] get() 被调用（前端 PULL 拉取）: state=%s qr=%s",
+            this.payload.state,
+            this.payload.qr !== undefined,
         );
         return this.payload;
     }
