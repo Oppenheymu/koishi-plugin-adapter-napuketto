@@ -2,43 +2,44 @@
   StatusSection.vue：登录状态信息面板（settings.vue 拆出，design.md §5.12）。
 
   展示非扫码状态（idle/scanned/logged_in/failed）的文案与操作：
-  - idle：子进程启动中（进度条）
-  - scanned：已扫码，待手机确认（进度条）
-  - logged_in：登录成功（显示昵称/账号 + 重新登录）
-  - failed：登录失败（显示错误 + 重新登录）
+  - idle：子进程启动中（加载态）
+  - scanned：已扫码，待手机确认（加载态）
+  - logged_in：登录成功（账号信息 + 重新登录）
+  - failed：登录失败（错误 + 重新登录）
 -->
 <template>
-  <!-- idle：未登录/子进程启动中 -->
-  <template v-if="state === 'idle'">
-    <p>{{ message || '正在启动登录…' }}</p>
-    <k-progress indeterminate />
-  </template>
+  <!-- idle：未登录 / 子进程启动中 -->
+  <div v-if="state === 'idle'" class="status-row">
+    <span class="spinner" aria-hidden="true" />
+    <span>{{ message || '正在启动登录…' }}</span>
+  </div>
 
   <!-- scanned：已扫码，待手机确认 -->
-  <template v-else-if="state === 'scanned'">
-    <p>{{ message }}</p>
-    <k-progress indeterminate />
-  </template>
+  <div v-else-if="state === 'scanned'" class="status-row">
+    <span class="spinner" aria-hidden="true" />
+    <span>{{ message || '已扫码，请在手机上确认登录' }}</span>
+  </div>
 
   <!-- logged_in：登录成功 -->
-  <template v-else-if="state === 'logged_in'">
-    <p>
-      <k-icon name="check-circle" class="status-icon success" />
-      {{ message }}
-      <template v-if="self">：{{ self.nick }}（{{ self.uin }}）</template>
+  <div v-else-if="state === 'logged_in'" class="status-block">
+    <p class="status-title">{{ message || '登录成功' }}</p>
+    <p v-if="self" class="account">
+      <k-icon name="user" />
+      <span class="nick">{{ self.nick }}</span>
+      <span class="uin">{{ self.uin }}</span>
     </p>
     <k-button class="relogin-button" :disabled="qrLoading" @click="emit('relogin')">
       重新登录
     </k-button>
-  </template>
+  </div>
 
   <!-- failed：登录失败 -->
-  <template v-else-if="state === 'failed'">
-    <p>{{ lastError || message }}</p>
+  <div v-else-if="state === 'failed'" class="status-block">
+    <p class="status-title">{{ lastError || message || '登录失败' }}</p>
     <k-button class="relogin-button" :disabled="qrLoading" @click="emit('relogin')">
       重新登录
     </k-button>
-  </template>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -70,24 +71,52 @@ const emit = defineEmits<{
 </script>
 
 <style lang="scss" scoped>
-.status-icon
-{
-  margin-right: 0.25rem;
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
 
-  &.success
-  {
-    color: #52c41a;
+.status-block {
+  .status-title {
+    margin: 0;
+  }
+
+  .account {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0.25rem 0 0.5rem;
+    color: var(--k-text-normal);
+
+    .k-icon {
+      color: var(--k-color-success);
+    }
+
+    .uin {
+      color: var(--k-text-light);
+    }
   }
 }
 
-.relogin-button
-{
-  border-width: 2px;
+.relogin-button {
   margin-top: 0.5rem;
 }
 
-.k-progress
-{
-  margin-top: 1rem;
+.spinner {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

@@ -7,38 +7,44 @@
 -->
 <template>
   <div class="qrcode-panel">
+    <!-- 二维码卡片（白底 + 阴影，参照 bilibili-dm） -->
     <div v-if="image" class="qrcode-container">
       <img class="qrcode" :src="image" alt="NapukettoQQ 登录二维码" />
       <!-- 本地 2 分钟过期遮罩（kernel 过期会自动推新码，新码到达即复位） -->
       <div v-if="qrExpired" class="refresh-overlay">
         <p>二维码已过期</p>
-        <k-button @click="emit('refresh-qr')" :disabled="qrLoading">刷新二维码</k-button>
+        <k-button :disabled="qrLoading" @click="emit('refresh-qr')">
+          <span class="button-inner">
+            <k-icon name="redo" />
+            刷新二维码
+          </span>
+        </k-button>
       </div>
     </div>
+    <!-- 二维码尚未到达：加载态 -->
     <div v-else class="qrcode-loading">
-      <k-icon name="loader" class="rotating" />
+      <span class="spinner" aria-hidden="true" />
       <span>正在获取二维码…</span>
     </div>
 
-    <div class="qrcode-instructions">
-      <p>{{ message }}</p>
-      <p v-if="image">请在两分钟内使用手机端扫描并确认登录</p>
-    </div>
+    <p class="instructions">
+      {{ message || '请使用手机 QQ 扫描二维码登录' }}
+      <span v-if="image">，二维码两分钟内有效</span>
+    </p>
 
     <div class="qrcode-actions">
-      <k-button @click="emit('refresh-qr')" :disabled="qrLoading">
-        <template v-if="qrLoading">
-          <k-icon name="loader" class="rotating" />
-          刷新中…
-        </template>
-        <template v-else>
-          <k-icon name="refresh-cw" />
-          刷新二维码
-        </template>
+      <k-button :disabled="qrLoading" @click="emit('refresh-qr')">
+        <span class="button-inner">
+          <span v-if="qrLoading" class="spinner" aria-hidden="true" />
+          <k-icon v-else name="redo" />
+          {{ qrLoading ? '刷新中…' : '刷新二维码' }}
+        </span>
       </k-button>
-      <k-button v-if="qr?.qrcodeUrl" type="link" @click="emit('open-qr-url')">
-        <k-icon name="external-link" />
-        无法扫码？点此打开登录链接
+      <k-button v-if="qr?.qrcodeUrl" frameless type="primary" @click="emit('open-qr-url')">
+        <span class="button-inner">
+          <k-icon name="external" />
+          无法扫码？点此打开登录链接
+        </span>
       </k-button>
     </div>
   </div>
@@ -71,27 +77,23 @@ const emit = defineEmits<{
 </script>
 
 <style lang="scss" scoped>
-.qrcode-panel
-{
+.qrcode-panel {
   // 面板内边距：顶部二维码/底部操作按钮离 k-comment 边缘留出呼吸空间
-  //（k-comment 上下 padding 仅 1px，内容贴边，2026-08-14 观感修复）
   padding: 0.75rem 0;
 }
 
-.qrcode-container
-{
+.qrcode-container {
   position: relative;
   display: inline-block;
   margin: 0 0 0.5rem;
-  border: 1px solid #eee;
+  border: 1px solid var(--k-color-divider);
   padding: 10px;
   border-radius: 8px;
-  background-color: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background-color: #fff;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 10%);
 }
 
-.qrcode
-{
+.qrcode {
   display: block;
   max-width: 200px;
   // 二维码圆角（容器 8px，图片裁角 4px 内缩，视觉更柔和）
@@ -99,71 +101,73 @@ const emit = defineEmits<{
   image-rendering: pixelated;
 }
 
-.qrcode-loading
-{
+.qrcode-loading {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   margin: 0.5rem 0;
-
-  .rotating
-  {
-    font-size: 1.2rem;
-  }
+  color: var(--k-text-normal);
 }
 
-.refresh-overlay
-{
+.refresh-overlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.7);
+  inset: 0;
+  background-color: rgb(0 0 0 / 70%);
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  color: white;
+  gap: 0.5rem;
+  color: #fff;
   border-radius: 8px;
 
-  p
-  {
-    margin: 0 0 0.5rem;
+  p {
+    margin: 0;
+  }
+
+  // 遮罩上的按钮改白字，避免深色底上不可读
+  :deep(.k-button) {
+    color: #fff;
+    border-color: rgb(255 255 255 / 60%);
+
+    &:hover:not(.disabled) {
+      color: #fff;
+      border-color: #fff;
+    }
   }
 }
 
-.qrcode-instructions
-{
-  margin-bottom: 0.75rem;
-
-  p
-  {
-    margin: 0.25rem 0;
-  }
+.instructions {
+  margin: 0 0 0.75rem;
+  color: var(--k-text-normal);
 }
 
-.qrcode-actions
-{
+.qrcode-actions {
   display: flex;
-  gap: 1rem; // 按钮间距（0.5rem 太挤，2026-08-14 观感修复）
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
   align-items: center;
 }
 
-.rotating
-{
-  animation: rotate 1s linear infinite;
+.button-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
-@keyframes rotate
-{
-  from
-  {
-    transform: rotate(0deg);
-  }
+.spinner {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
 
-  to
-  {
+@keyframes spin {
+  to {
     transform: rotate(360deg);
   }
 }
