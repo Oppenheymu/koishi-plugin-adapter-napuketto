@@ -1,5 +1,15 @@
 # koishi-plugin-adapter-napuketto
 
+## 0.0.16
+
+### Patch Changes
+
+- fix: inject 迁入 namespace 统一元数据位置（与 Config/usage 一致，编译产物等价 static），
+  修正两处回归：① 误加 `export const name` 会编译成 `NapukettoBot.name = ...` 赋值，而
+  Function.name 是 writable:false——ESM 严格模式加载即抛 TypeError（实证），已移除（Bot
+  子类插件名由 package.json 决定）；② inject 误标 `required` 会让 database/console 变
+  强制依赖（没装数据库/控制台插件则 Bot 起不来），改回 `optional` 保持「没装也能跑」
+
 ## 0.0.15
 
 ### Patch Changes

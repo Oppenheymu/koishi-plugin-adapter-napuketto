@@ -17,15 +17,6 @@ export * from "./actions/index.js";
 export * from "./bot/index.js";
 export * from "./events/index.js";
 
-/**
- * 插件名。
- *
- * ⚠️ 此导出在 `export default` 下会被 koishi loader 的 unwrapExports 丢弃
- * （默认导出 NapukettoBot 类，模块级 name 不保留）——插件展示名实际来自
- * package.json 的 name。usage 已移到 bot.ts 的 namespace（挂到类上才有效）。
- */
-export const name = "adapter-napuketto";
-
 // NapukettoBot 经 export * from "./bot/index.js" 已导出；这里只补 Config
 // （bot.ts namespace 声明合并成员，不走 barrel 链）。
 export { Config };

@@ -75,20 +75,6 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
         options?: unknown,
     ) => MessageEncoder<never, never>;
 
-    // ⚠️ 声明服务依赖（2026-08-09 database / 2026-08-14 console）：
-    // Bot 子类插件（export default）的模块级导出会被 loader unwrapExports 丢弃，
-    // inject 必须挂类上（static，napcat 同构）。两个都是**可选增强**——
-    // database：预热 channel/user 消除 koishi get-or-create 并发竞态（没装数据库
-    // 插件也能跑，只是不预热，koishi 兜底）；console：控制台登录面板（没装
-    // 控制台没面板，登录走二维码文件/日志）。cordis 对未声明 inject 的服务访问
-    // emit internal/warning（实测每条消息刷 `property database is not
-    // registered`），optional 声明让 internal/inject 检查放行，消除刷屏；
-    // 配合 NapukettoDatabase 内部收 root ctx 双保险（design.md §5.13）。
-    static inject = {
-        database: { required: false },
-        console: { required: false },
-    };
-
     /** 当前 IPC 客户端引用（driver 重启后换实例，onReady 更新）。 */
     private readonly clientRef: { current: NapukettoIpcClient | null } = { current: null };
     /** 控制台登录面板（console 服务就绪后装配；自 bot.ts 拆出，login-panel.ts）。 */
@@ -369,6 +355,24 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
 export namespace NapukettoBot {
     export const Config = napukettoConfigSchema;
     export type Config = NapukettoBotConfig;
+
+    // ⚠️ 声明服务依赖（2026-08-09 database / 2026-08-14 console）：
+    // Bot 子类插件（export default）的模块级导出会被 loader unwrapExports 丢弃，
+    // inject 必须挂类上——与 Config/usage 同源（namespace 合并编译成静态属性，
+    // 运行时等价 static）。两个都是**可选增强**（放 optional 而非 required：
+    // required 会强制用户安装对应插件，破坏「没装也能跑」）——
+    // database：预热 channel/user 消除 koishi get-or-create 并发竞态（没装数据库
+    // 插件也能跑，只是不预热，koishi 兜底）；console：控制台登录面板（没装
+    // 控制台没面板，登录走二维码文件/日志）。cordis 对未声明 inject 的服务访问
+    // emit internal/warning（实测每条消息刷 `property database is not
+    // registered`），optional 声明让 internal/inject 检查放行，消除刷屏；
+    // 配合 NapukettoDatabase 内部收 root ctx 双保险（design.md §5.13）。
+    // ⚠️ 不写 export const name：namespace 合并编译成 `NapukettoBot.name = ...`
+    // 赋值语句，而 Function.name 是 writable:false——ESM 严格模式下加载即抛
+    // TypeError（2026-08-14 实证）。Bot 子类插件名由 package.json 决定，无需静态。
+    export const inject = {
+        optional: ["database", "console"],
+    };
 
     /**
      * 控制台插件详情页 usage（2026-08-14 根因修复）。
