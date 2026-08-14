@@ -79,7 +79,7 @@ NapukettoQQ 的自建宿主（路线 A）是**标准 Node 进程**（stub QQNT.d
 ```
 apps/koishi-plugin-adapter-napuketto/
 ├── src/
-│   ├── index.ts              # 插件入口：name / usage / Config / apply（平台注册 + console 入口）
+│   ├── index.ts              # 插件入口：默认导出 NapukettoBot（平台注册）；usage/Config 挂类上（namespace 合并，见 §5.11）
 │   ├── constants.ts          # 协议共享常量（PRIVATE_PREFIX / CHANNEL_TYPE / BOT_STATUS，2026-08-14）
 │   ├── bot.ts                # NapukettoBot：koishi Bot 子类（平台注册、message 发送）
 │   ├── bot/                  # Bot 集成（§5.11，2026-08-14 拆分）
@@ -525,14 +525,25 @@ failed`（现象：发送方日志 `已缓存海报图片` 成功但 `msg.sendMe
 **定位**：`NapukettoBot extends Bot` 注册为 koishi 平台，把 §5.2~§5.10 全部装配起来。
 **验证点：koishi 控制台收到消息 + 能回复**（事件桥 + 动作桥端到端）。
 
-**形态**：`src/bot/` 目录（单文件 ≤300 行约束）：
+**形态**：`src/bot/` 目录（单文件 ≤300 行约束，2026-08-14 fallow 拆分后）：
 
 | 文件 | 职责 |
 |---|---|
-| `bot.ts` | `NapukettoBot extends Bot`：平台注册、driver 装配、动作方法 |
+| `bot.ts` | `NapukettoBot extends Bot`：平台注册、driver 装配、动作方法（类主体） |
 | `message.ts` | `NapukettoMessageEncoder extends MessageEncoder`（元素收集 → internal.sendMessage） |
 | `launch.ts` | launch 工厂（launchSelfHost 组装 + 包入口解析，纯函数可单测） |
+| `console-entry.ts` | 控制台前端入口注册（packageRoot 逐级上溯 + addEntry，模块级去重） |
+| `login-panel.ts` | `NapukettoLoginPanel`：面板装配/reload 去重/连接回放/指令上行（deps 注入解耦） |
+| `session.ts` | `applySessionFields` 纯函数（可选字段条件赋值 + elements 特殊处理） |
 | `index.ts` | barrel |
+
+**usage/Config 挂类上（关键决策，2026-08-14 根因修复）**：
+`usage`（插件详情页说明）与 `Config`（配置 schema）通过 `export namespace NapukettoBot`
+声明合并挂成类静态属性，**不放 index.ts 模块级导出**。原因：koishi loader 的
+`unwrapExports = module?.default || module` 会把 `export default NapukettoBot` 解包成类本身，
+丢弃模块级 `usage`/`name` 导出 → 控制台 `PackageProvider.parseExports` 读 `exports?.usage`
+恒 undefined → 插件详情页不显示说明（实测 bug，提交 7513f04）。挂到类上后静态属性随类
+保留。`Config` 同理（koishi bots 配置校验按 `bot.constructor.Config` 反射查找）。
 
 **装配方式（关键决策）**：**不写 Adapter**（fork/connect 抽象为 HTTP/WS 网络服务设计）。
 koishi `Bot` 构造自动注册 `ctx.on('ready', () => this.start())`——直接 override `start()`
