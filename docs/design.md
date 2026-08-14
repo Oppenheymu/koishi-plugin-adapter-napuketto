@@ -691,6 +691,17 @@ kctx.inject(['console'], (ctx) => {
   inject 回调里，`consoleEntryRegistered` 模块级 flag 保证多 bot 实例只注册一次；
   路径用 `import.meta.url` 定位（开发态 ESM 直载），bundle 后 `__dirname` 兜底。
 
+**⚠️ addEntry 作用域绑定 + 去重 flag 必须随作用域 dispose 重置（2026-08-14 实证，
+插件 stop/start 后面板消失根因）**：`ctx.console.addEntry()` 创建的 `Entry` 是**作用域
+绑定**的（@koishijs/console `src/entry.ts`：`ctx.collect('entry', () => delete
+entries[id])`）——插件 stop → 作用域 dispose → **console 自动移除 entry**。若模块级
+去重 flag 不重置，插件重启后 `registerConsoleEntry` 直接 return → 不重新 addEntry →
+entry 永久丢失 → 前端 slot 组件（扫码面板）消失。修复：`ctx.on("dispose", () => {
+consoleEntryRegistered = false; })`——作用域销毁时重置 flag，下次插件启动可重新注册。
+多 bot 场景：第一个 bot 注册（挂 dispose 重置），其余 return 不挂——但第一个的
+dispose 会重置 flag，整体正确（无活跃 entry 时 flag 必为 false）。bilibili-dm 无去重
+每次 apply 都 addEntry，天然无此问题。
+
 **前端形态**（`client/`）：
 
 | 文件 | 职责 |
