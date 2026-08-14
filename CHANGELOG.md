@@ -1,5 +1,13 @@
 # koishi-plugin-adapter-napuketto
 
+## 0.0.19
+
+### Patch Changes
+
+- 4c18539: fix(adapter): 修复控制台登录面板二维码不显示——QrCodePanel 模板标签大小写不匹配（`<qrcode-panel>` 反推为 `QrcodePanel`，与 import 的 `QrCodePanel` 不匹配 → 组件被 tree-shaking 删除，二维码渲染为空自定义元素）。改 PascalCase `<QrCodePanel>` 后实测二维码正常展示。
+- Updated dependencies [fa86aef]
+  - @napuketto/loader@0.0.14
+
 ## 0.0.18
 
 ### Patch Changes
@@ -11,7 +19,7 @@
   永不挂载，后端数据（waiting_scan + 二维码）虽正常推送但浏览器 F12 可见
   `GET /@plugin-<key>/index.js 403`。`registerConsoleEntry` 改为防御：prod 路径不含
   node_modules 时把 dist 产物复制到 `<数据目录>/napuketto-console/node_modules/
-  koishi-plugin-adapter-napuketto/dist`（路径含 node_modules → 通过安全检查），
+koishi-plugin-adapter-napuketto/dist`（路径含 node_modules → 通过安全检查），
   addEntry 指向复制产物；标准 npm/pnpm 安装（插件在 node_modules 下）行为不变，
   直接用包内 dist。另将入口注册日志从 console.log 改为 logger（koishi 日志可见）。
 
