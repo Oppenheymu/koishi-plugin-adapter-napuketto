@@ -349,9 +349,9 @@ export interface LoginView {
 }
 ```
 
-**QR 展示形态**：`qr.pngBase64` → `data:image/png;base64,...` → koishi 控制台 `<img>`；
-`qr.qrcodeUrl` 兜底链接（控制台不可用时发消息）。本轮定义 `LoginObserver` 装配，
-UI 渲染（console 组件）留给 §6.5 Bot 集成后。
+**QR 展示形态**：`qr.pngBase64` → payload 内拼成完整 data URI `image` 字段 →
+koishi 控制台 `<img :src="image">`；`qr.qrcodeUrl` 兜底链接（控制台不可用时发消息）。
+本轮定义 `LoginObserver` 装配，UI 渲染（console 组件）留给 §6.5 Bot 集成后。
 
 **错误**：`failed` 时经 `view.onStateChange` 通知 + 记录最近错误（`lastError`），
 apply() 层可查（driver 已按重启策略兜底）。
@@ -632,11 +632,17 @@ launchSelfHost({
 // bot.ts（satorijs Context → koishi Context cast，运行时同实例）
 const kctx = this.ctx as unknown as KoishiContext;
 kctx.inject(['console'], (ctx) => {
-  this.panelRef.current = new NapukettoLoginProvider(ctx, {
+  const provider = new NapukettoLoginProvider(ctx, {
     selfId: config.selfId,
-    onRelogin: () => this.requestRelogin(),   // 见下
+    onRelogin: () => this.requestRelogin(),      // 见下
+    onRefreshQr: () => this.requestRefreshQr(),  // IPC 直达刷新二维码
   });
-  this.pushLoginPanel();                      // 立即推送当前快照
+  this.panelRef.current = provider;
+  // 服务值注册到 root store（PULL 拉取）+ console/connection 兜底重推（PUSH 回放）
+  const disposeService = ctx.root.set(`console.services.${loginServiceId(config.selfId)}`, provider);
+  const offConnection = ctx.console.ctx.on('console/connection', () => this.pushLoginPanel());
+  ctx.on('dispose', () => { disposeService(); offConnection(); });
+  this.pushLoginPanel();                        // 立即推送当前快照
 });
 ```
 
@@ -663,7 +669,7 @@ kctx.inject(['console'], (ctx) => {
 
 前端要点（B站模板模式）：
 - 数据：`store['napuketto-login-<uin>']`（Vue 响应式，`computed` 读取 + 插件名/selfId 校验）
-- 二维码：`<img :src="'data:image/png;base64,' + qr.pngBase64">` + `qr.qrcodeUrl` 链接兜底
+- 二维码：后端 payload 直接给 `image`（完整 data URI）→ `<img :src="data.image">`；`qr.qrcodeUrl` 链接兜底
 - 重新登录：`send('napuketto-login-<uin>/relogin', { selfId })`
 - 过期展示：前端做 3 分钟展示计时器（纯 UI 辅助），真正过期由 kernel 自动 refresh 推新码
 - **零 HTTP 请求**：只读 store + 发 WebSocket 事件

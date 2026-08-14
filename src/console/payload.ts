@@ -25,11 +25,16 @@ export function loginStateMessage(state: LoginState): string {
 
 /** LoginSnapshot → LoginPanelPayload（exactOptionalPropertyTypes：条件展开，不显式赋 undefined）。 */
 export function toLoginPanelPayload(snapshot: LoginSnapshot, selfId: string): LoginPanelPayload {
+    const qr = snapshot.qr;
     return {
         state: snapshot.state,
         selfId,
         message: loginStateMessage(snapshot.state),
-        ...(snapshot.qr !== undefined ? { qr: snapshot.qr } : {}),
+        ...(qr !== undefined ? { qr } : {}),
+        // 二维码完整 data URI（前端 <img> 直接展示，参照 bilibili-dm 的 image 字段）
+        ...(qr !== undefined && qr.pngBase64 !== ""
+            ? { image: `data:image/png;base64,${qr.pngBase64}` }
+            : {}),
         ...(snapshot.self !== undefined ? { self: snapshot.self } : {}),
         ...(snapshot.lastError !== undefined ? { lastError: snapshot.lastError } : {}),
     };

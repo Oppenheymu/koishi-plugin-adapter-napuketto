@@ -14,6 +14,8 @@ export interface LoginPanelPayload {
     selfId: string;
     /** 人类可读状态文案（面板主提示）。 */
     message?: string;
+    /** 二维码完整 data URI（waiting_scan 时推送；前端直接 <img :src> 展示）。 */
+    image?: string;
     /** 二维码（waiting_scan 时推送；pngBase64 + qrcodeUrl 链接兜底）。 */
     qr?: QrCodeData;
     /** 登录成功 selfInfo（logged_in 时）。 */

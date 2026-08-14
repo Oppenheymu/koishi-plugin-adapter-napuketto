@@ -19,11 +19,11 @@
     <!-- waiting_scan：扫码登录（二维码 + 手动刷新；kernel 过期自动推新码） -->
     <template v-else-if="data.state === 'waiting_scan'">
       <p>{{ data.message }}</p>
-      <div v-if="data.qr" class="qrcode-container">
-        <img class="qrcode" :src="qrSrc" alt="NapukettoQQ 登录二维码" />
+      <div v-if="data.image" class="qrcode-container">
+        <img class="qrcode" :src="data.image" alt="NapukettoQQ 登录二维码" />
       </div>
       <p v-else>正在获取二维码…</p>
-      <p v-if="data.qr" class="hint">请在两分钟内使用手机端扫描并确认登录</p>
+      <p v-if="data.image" class="hint">请在两分钟内使用手机端扫描并确认登录</p>
       <k-button :disabled="qrLoading" @click="refreshQr">刷新二维码</k-button>
       <p v-if="data.qr" class="hint">
         <a :href="data.qr.qrcodeUrl" target="_blank" rel="noopener">无法扫码？点此打开登录链接</a>
@@ -64,6 +64,8 @@ type LoginState = 'idle' | 'waiting_scan' | 'scanned' | 'logged_in' | 'failed';
 interface LoginPanelData {
   state: LoginState;
   message?: string;
+  /** 二维码完整 data URI（waiting_scan 时有；直接 <img :src> 展示）。 */
+  image?: string;
   /** state=waiting_scan 时有。 */
   qr?: { pngBase64: string; qrcodeUrl: string };
   /** state=logged_in 时有。 */
@@ -97,14 +99,6 @@ const data = computed<LoginPanelData | null>(() =>
   return serviceData !== undefined && typeof serviceData === 'object'
     ? (serviceData as LoginPanelData)
     : null;
-});
-
-/** 二维码 data URI（pngBase64 → data:image/png;base64,...）。 */
-const qrSrc = computed(() =>
-{
-  const pngBase64 = data.value?.qr?.pngBase64;
-  if (!pngBase64) return '';
-  return `data:image/png;base64,${pngBase64}`;
 });
 
 /** 刷新二维码按钮 loading 态。 */

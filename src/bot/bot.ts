@@ -174,8 +174,17 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
             // 拿 set 返回的 dispose 函数，在 bot dispose 时调用——既清理 store
             // 又从 root scope.disposables 移除自身（reload 不报错、不泄漏）。
             const disposeService = ctx.root.set(serviceName, provider);
+            // 兜底：登录是自动启动的，二维码/状态在控制台客户端连接前就推送完，
+            // 被 DataService.refresh() → broadcast 的 `if (!handles.length) return`
+            // 丢弃。console/connection 事件在 console 服务自身 ctx 上发出，需在
+            // 该 ctx 上监听（inject fork 作用域是兄弟分支，收不到），客户端连接
+            // 瞬间再推一次，确保控制台打开即回放最新登录快照（含二维码）。
+            const offConnection = ctx.console.ctx.on("console/connection", () => {
+                this.pushLoginPanel();
+            });
             ctx.on("dispose", () => {
                 disposeService();
+                offConnection();
             });
             // 装配完成立即推送当前快照（面板打开即有状态，不必等下次变化）
             this.pushLoginPanel();

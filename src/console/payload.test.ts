@@ -36,7 +36,17 @@ describe("toLoginPanelPayload", () => {
             "10001",
         );
         expect(payload.qr).toEqual({ pngBase64: "aGVsbG8=", qrcodeUrl: "https://example.com/qr" });
+        expect(payload.image).toBe("data:image/png;base64,aGVsbG8=");
         expect(payload.message).toBe("请使用手机 QQ 扫描二维码");
+    });
+
+    it("pngBase64 为空时不产出 image 字段", () => {
+        const payload = toLoginPanelPayload(
+            { state: "waiting_scan", qr: { pngBase64: "", qrcodeUrl: "https://example.com/qr" } },
+            "10001",
+        );
+        expect(payload.qr).toBeDefined();
+        expect(payload.image).toBeUndefined();
     });
 
     it("self 条件展开（logged_in）", () => {
