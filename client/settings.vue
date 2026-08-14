@@ -25,7 +25,7 @@
       <QrCodePanel
         v-if="data.state === 'waiting_scan'"
         :image="data.image"
-        :message="data.message"
+        :message="data.message"i
         :qr="data.qr"
         :qr-expired="qrExpired"
         :qr-loading="qrLoading"
@@ -107,13 +107,19 @@ const qrExpired = ref(false);
 /** 过期计时器。 */
 let qrTimer: number | null = null;
 
-/** 面板提示色（k-comment type）。 */
+/** 面板提示色（k-comment type）。
+ *
+ * ⚠️ 不能用 'info'（2026-08-14 实证）：koishi 的 k-comment 组件只有
+ * primary/secondary/warning/success/error 五种类型有样式规则（背景色 +
+ * 左边框），'info' 没有规则 → 背景透明（rgba(0,0,0,0)），面板看起来没有
+ * 底色。与 bilibili-dm 对齐：等待扫码/二维码（waiting_scan/idle/scanned）
+ * 用 warning（黄），登录成功用 success（绿），失败用 error（红）。 */
 const commentType = computed(() =>
 {
   const state = data.value?.state;
   if (state === 'logged_in') return 'success';
   if (state === 'failed') return 'error';
-  return 'info';
+  return 'warning';
 });
 
 // ── 二维码过期计时（B站模板同款：2 分钟遮罩；kernel 过期自动推新码即复位） ──
