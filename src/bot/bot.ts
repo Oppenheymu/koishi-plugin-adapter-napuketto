@@ -19,20 +19,35 @@
  */
 
 import type { Context } from "@satorijs/core";
-import { Bot, h, type Context as KoishiContext, type MessageEncoder, type Universal } from "koishi";
-import { NapukettoInternal } from "../actions/index.js";
+import { Bot, type Context as KoishiContext, type MessageEncoder, type Universal } from "koishi";
 import { type LogLevel, type NapukettoBotConfig, napukettoConfigSchema } from "../config.js";
-import { BOT_STATUS, CHANNEL_TYPE, PRIVATE_PREFIX } from "../constants.js";
+import { BOT_STATUS, PRIVATE_PREFIX } from "../constants.js";
 import { NapukettoDatabase } from "../database/index.js";
 import { NapukettoDriver } from "../driver/index.js";
-import type { HFn } from "../events/elements.js";
-import { NapukettoEventBridge, type NapukettoSessionFields } from "../events/index.js";
+import type { NapukettoEventBridge, NapukettoSessionFields } from "../events/index.js";
 import type { NapukettoIpcClient } from "../ipc/index.js";
-import { NapukettoLoginState } from "../login/index.js";
+import type { NapukettoLoginState } from "../login/index.js";
+import {
+    createBridge,
+    createInternal,
+    createLoginState,
+    createPanel,
+    resolveAssignPolicy,
+} from "./assembly.js";
+import { buildDriverEvents } from "./driver-events.js";
 import { buildLaunch } from "./launch.js";
-import { NapukettoLoginPanel } from "./login-panel.js";
+import type { NapukettoLoginPanel } from "./login-panel.js";
 import { NapukettoMessageEncoder } from "./message.js";
 import { applySessionFields } from "./session.js";
+import {
+    type RawFriend,
+    type RawGroup,
+    toDirectChannel,
+    toFriendList,
+    toGuildList,
+    toTextChannel,
+    toUserFields,
+} from "./transform.js";
 
 /** logLevel 配置 → reggol 数字（reggol：DEBUG=3 / INFO=2 / ERROR=1 / SILENT=0）。 */
 const LOG_LEVEL_MAP: Record<LogLevel, number> = {
@@ -90,84 +105,47 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
         this.user ??= {} as Universal.User;
         this.user.avatar = `http://q.qlogo.cn/headimg_dl?dst_uin=${config.selfId}&spec=640`;
 
-        this.login = new NapukettoLoginState({
-            onStateChange: (state, self) => {
-                if (self !== undefined) {
-                    this.user ??= {} as Universal.User;
-                    this.user.id = self.uin;
-                    this.user.name = self.nick;
-                }
-                this.logger.debug("[napuketto] 登录状态: %s", state);
-                this.panel.push();
+        this.login = createLoginState({
+            logger: this.logger,
+            // 回调运行时才触发，constructor 已保证 this.user 非空
+            getUser: () => {
+                this.user ??= {} as Universal.User;
+                return this.user;
             },
-            onQrChange: (_qr) => {
-                this.logger.debug("[napuketto] 二维码更新");
-                this.panel.push();
-            },
-            onError: (error) => {
-                this.logger.warn("[napuketto] 登录错误: %o", error);
-                this.panel.push();
-            },
+            getPanel: () => this.panel,
         });
-
         // 控制台登录面板（login-panel.ts 独立类：装配/reload 去重/连接回放/
         // 指令上行全封装；deps 只暴露 selfId + 快照 + IPC 能力，bot 不碰细节）
-        this.panel = new NapukettoLoginPanel({
-            selfId: config.selfId,
-            getSnapshot: () => this.login.snapshot,
-            sendControl: (payload) => {
-                const client = this.clientRef.current;
-                if (client === null) {
-                    return false;
-                }
-                client.sendControl(payload);
-                return true;
-            },
-            request: async (action, params) => {
-                const client = this.clientRef.current;
-                if (client === null) {
-                    throw new Error("Napuketto 子进程未就绪（等待驱动连接）");
-                }
-                return client.request(action, params);
-            },
+        this.panel = createPanel({
+            selfId: this.config.selfId,
             logger: this.logger,
+            getLogin: () => this.login,
+            getClient: () => this.clientRef.current,
         });
         // satorijs Context → koishi Context cast——运行时同一实例，仅类型收窄
         this.panel.setup(this.ctx as unknown as KoishiContext);
 
         // 数据库操作集中管理（design.md §5.13）：dispatch 前原子预热 channel/user，
         // 消除 koishi get-or-create 并发撞唯一键（channel 与 binding 同源，issue
-        // #1545）。autoAssign/autoAuthorize 构造时解析一次——Computed 函数形式
-        // （per-session 计算）无 session 无法求值，取 Schema 默认值（true / 1）。
-        const koishiCtx = this.ctx as unknown as KoishiContext;
-        const rawAutoAssign = koishiCtx.config.autoAssign;
-        this.autoAssign = typeof rawAutoAssign === "function" ? true : (rawAutoAssign ?? true);
-        const rawAutoAuthorize = koishiCtx.config.autoAuthorize;
-        this.autoAuthorize = typeof rawAutoAuthorize === "function" ? 1 : (rawAutoAuthorize ?? 1);
-        this.database = new NapukettoDatabase(koishiCtx);
+        // #1545）。autoAssign/autoAuthorize 构造时解析一次（assembly.ts 纯函数）。
+        const { autoAssign, autoAuthorize } = resolveAssignPolicy(
+            this.ctx as unknown as KoishiContext,
+        );
+        this.autoAssign = autoAssign;
+        this.autoAuthorize = autoAuthorize;
+        this.database = new NapukettoDatabase(this.ctx as unknown as KoishiContext);
 
         // 事件桥（构造时装配一次；dispatch/selfId 无状态转发，driver 重启不影响）
-        this.bridge = new NapukettoEventBridge({
-            // dispatch 异步化（2026-08-09）：先原子预热 channel 再派发；桥回调
-            // 同步面，显式 void 丢弃 promise（预热失败不阻断派发）
-            dispatch: (session) => {
-                void this.dispatchSession(session);
-            },
-            selfId: () => this.login.snapshot.self?.uin ?? this.config.selfId,
-            // koishi h 可调用（Element 工厂）；类型适配（宽松签名，规避逆变检查）
-            h: adaptH(h),
-            platform: "napuketto",
+        this.bridge = createBridge({
+            logger: this.logger,
+            getLogin: () => this.login,
+            config: this.config,
+            dispatchSession: (session) => this.dispatchSession(session),
         });
 
         // 动作桥：request 绑定 clientRef（client null 时抛错，driver 就绪后可用）
-        this.internal = new NapukettoInternal({
-            request: async (action, params) => {
-                const client = this.clientRef.current;
-                if (client === null) {
-                    throw new Error("Napuketto 子进程未就绪（等待驱动连接）");
-                }
-                return client.request(action, params);
-            },
+        this.internal = createInternal({
+            getClient: () => this.clientRef.current,
         });
     }
 
@@ -195,7 +173,7 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
 
     /** 私聊频道（napcat 同款）。 */
     override async createDirectChannel(userId: string): Promise<Universal.Channel> {
-        return { id: `${PRIVATE_PREFIX}${userId}`, type: CHANNEL_TYPE.DIRECT };
+        return toDirectChannel(userId);
     }
 
     /** 消息历史 → koishi MessageList 形状 { data, next }。 */
@@ -241,44 +219,20 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
         return this.toJSON();
     }
 
-    /** 同步 user 字段（selfId 可能为空的场景下保留既有值）。 */
+    /** 同步 user 字段（selfId 可能为空的场景下保留既有值；transform.ts 纯函数）。 */
     private syncUser(partial: { uin?: string | undefined; nick?: string | undefined }): void {
         this.user ??= {} as Universal.User;
-        if (partial.uin !== undefined && partial.uin !== "") {
-            this.user.id = partial.uin;
-        }
-        if (partial.nick !== undefined && partial.nick !== "") {
-            this.user.name = partial.nick;
-        }
+        Object.assign(this.user, toUserFields(partial));
     }
 
     /** 好友列表（kernel Friend { uin, nickname } → Universal.Friend）。 */
     override async getFriendList(): Promise<Universal.List<Universal.Friend>> {
-        const friends = (await this.internal.getFriendList()) as
-            | Array<{ uin?: string; nickname?: string }>
-            | undefined;
-        return {
-            data: (friends ?? []).map((friend) => ({
-                user: {
-                    id: friend.uin ?? "",
-                    name: friend.nickname ?? friend.uin ?? "",
-                },
-                nick: friend.nickname ?? friend.uin ?? "",
-            })),
-        };
+        return toFriendList((await this.internal.getFriendList()) as RawFriend[] | undefined);
     }
 
     /** 群列表（kernel Group { groupCode, groupName } → Universal.Guild）。 */
     override async getGuildList(): Promise<Universal.List<Universal.Guild>> {
-        const groups = (await this.internal.getGroupList()) as
-            | Array<{ groupCode?: string; groupName?: string }>
-            | undefined;
-        return {
-            data: (groups ?? []).map((group) => ({
-                id: group.groupCode ?? "",
-                name: group.groupName ?? group.groupCode ?? "",
-            })),
-        };
+        return toGuildList((await this.internal.getGroupList()) as RawGroup[] | undefined);
     }
 
     /** 群详情（群列表里找）。 */
@@ -295,66 +249,32 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
     override async getChannel(channelId: string): Promise<Universal.Channel> {
         if (channelId.startsWith(PRIVATE_PREFIX)) {
             const userId = channelId.slice(PRIVATE_PREFIX.length);
-            return {
-                id: channelId,
-                type: CHANNEL_TYPE.DIRECT,
-                name: userId,
-            } satisfies Universal.Channel;
+            return toDirectChannel(userId);
         }
         const guild = await this.getGuild(channelId);
-        return {
-            id: channelId,
-            type: CHANNEL_TYPE.TEXT,
-            name: guild.name ?? channelId,
-        } satisfies Universal.Channel;
+        return toTextChannel(channelId, guild.name);
     }
 
     // ── 内部 ──
 
-    /** 创建 driver（launch 工厂组装 launchSelfHost，events 接线）。 */
+    /** 创建 driver（launch 工厂组装 launchSelfHost，events 接线走 driver-events.ts）。 */
     private setupDriver(): void {
         if (this.driver !== null) {
             return;
         }
         const driver = new NapukettoDriver({
             launch: buildLaunch(this.config),
-            events: {
-                onStatus: (status) => {
-                    this.logger.debug("[napuketto] 引导阶段: %s", status.phase);
+            // 事件接线（driver-events.ts 工厂：logger/login/bridge/offline 依赖注入）
+            events: buildDriverEvents({
+                logger: this.logger,
+                login: this.login,
+                bridge: this.bridge,
+                isDisconnected: () => this.status === BOT_STATUS.DISCONNECT,
+                handleReady: () => this.handleReady(),
+                offline: (error) => {
+                    this.offline(error);
                 },
-                onLogin: (payload) => {
-                    this.login.onLogin(payload.state, payload.selfInfo, payload.message);
-                },
-                onQr: (qr) => this.login.onQr(qr),
-                onEvent: (payload) => {
-                    // 事件桥入口（debug：Group 等高频事件在 info 下不刷屏；
-                    // 用户配 debug 可见全量事件转发，便于排查）
-                    this.logger.debug(
-                        "[napuketto] 收到事件: %s/%s args=%d",
-                        payload.service,
-                        payload.name,
-                        payload.args.length,
-                    );
-                    this.bridge.handle(payload);
-                },
-                onReady: () => {
-                    this.handleReady();
-                },
-                onExit: () => {
-                    this.login.onExit();
-                    // 非主动停止的退出 → offline（driver 内部会重启；达上限 onError）
-                    if (this.status !== BOT_STATUS.DISCONNECT) {
-                        this.offline();
-                    }
-                },
-                onError: (error) => {
-                    this.logger.warn("[napuketto] 驱动错误: %o", error);
-                    this.offline(error instanceof Error ? error : new Error(String(error)));
-                },
-                onLog: (log) => {
-                    this.logger.debug("[napuketto 子进程] %s", log.message);
-                },
-            },
+            }),
             // exactOptionalPropertyTypes：可选字段条件展开，不显式赋 undefined
             ...(this.config.restart !== undefined ? { restart: this.config.restart } : {}),
             ...(this.config.heartbeatTimeoutMs !== undefined
@@ -435,16 +355,6 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
             });
         }
     }
-}
-
-/** koishi h 工厂适配（HFn）。h 可调用（Element 工厂），类型宽适配规避逆变检查。 */
-function adaptH(koishiH: typeof h): HFn {
-    const factory = koishiH as unknown as (
-        type: string,
-        attrs?: Record<string, unknown>,
-        ...children: unknown[]
-    ) => { type: string; attrs: Record<string, unknown>; toString(): string };
-    return (type, attrs, ...children) => factory(type, attrs, ...children);
 }
 
 /** 平台配置 schema（koishi bots 配置校验，napcat 同构 namespace 合并）。 */

@@ -6,11 +6,14 @@
 
 - refactor: 按 fallow 静态分析重构，消灭全部死代码并拆分大文件（行为不变，全量单测 489 通过）
 
-  - **拆分 godfile**：`bot.ts`（602 行 → 475 行）拆出 `bot/console-entry.ts`（前端入口注册）、
-    `bot/login-panel.ts`（控制台面板装配/指令上行）、`bot/session.ts`（session 字段赋值纯函数）、
-    `src/constants.ts`（协议共享常量）；`driver.ts` 拆出 `driver/heartbeat.ts`（心跳监控独立类）；
-    `ipc/client.ts` 拆出 `ipc/pending.ts`（请求-响应匹配）；`database/index.ts` 拆出
-    `database/serial-queue.ts`（per-key 串行队列）
+  - **拆分 godfile**：`bot.ts`（602 行 → 384 行）拆出 `bot/assembly.ts`（构造装配工厂，
+    host 注入）、`bot/transform.ts`（kernel → Universal 翻译纯函数，新增 13 单测）、
+    `bot/driver-events.ts`（driver 事件接线工厂）、`bot/console-entry.ts`（前端入口注册）、
+    `bot/login-panel.ts`（控制台面板装配/指令上行）、`bot/session.ts`（session 字段赋值
+    纯函数）、`src/constants.ts`（协议共享常量）；`driver.ts` 拆出 `driver/heartbeat.ts`
+    （心跳监控独立类）；`ipc/client.ts` 拆出 `ipc/pending.ts`（请求-响应匹配）；
+    `database/index.ts` 拆出 `database/serial-queue.ts`（per-key 串行队列）；
+    `events/elements.ts` 新增 `bindKoishiH`（原 bot.ts adaptH 正名归位，对齐文档命名）
   - **前端拆分**：`settings.vue`（363 行 → 217 行）template 拆成 `client/components/QrCodePanel.vue`
     （二维码块）与 `client/components/StatusSection.vue`（状态块），fallow template 复杂度
     CRITICAL → 移除

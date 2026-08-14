@@ -529,7 +529,10 @@ failed`（现象：发送方日志 `已缓存海报图片` 成功但 `msg.sendMe
 
 | 文件 | 职责 |
 |---|---|
-| `bot.ts` | `NapukettoBot extends Bot`：平台注册、driver 装配、动作方法（类主体） |
+| `bot.ts` | `NapukettoBot extends Bot`：平台注册、生命周期、override 动作方法、dispatch（类主体） |
+| `assembly.ts` | 构造装配工厂（createLoginState/createPanel/createBridge/createInternal/resolveAssignPolicy，host 注入） |
+| `transform.ts` | kernel → koishi Universal 形状翻译纯函数（好友/群/频道/登录信息，可单测） |
+| `driver-events.ts` | driver 事件接线工厂（buildDriverEvents，host 注入） |
 | `message.ts` | `NapukettoMessageEncoder extends MessageEncoder`（元素收集 → internal.sendMessage） |
 | `launch.ts` | launch 工厂（launchSelfHost 组装 + 包入口解析，纯函数可单测） |
 | `console-entry.ts` | 控制台前端入口注册（packageRoot 逐级上溯 + addEntry，模块级去重） |

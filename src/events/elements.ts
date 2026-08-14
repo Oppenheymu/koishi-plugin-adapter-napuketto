@@ -19,6 +19,7 @@
  * （koishi 主包 import 会初始化 loader，单测环境崩溃）。
  */
 import type { CanonicalElement } from "@napuketto/kernel";
+import type { h } from "koishi";
 
 /** koishi h() 工厂最小面（type/attrs → 元素；单测用 mock 实现）。 */
 export type HFn = (
@@ -26,6 +27,18 @@ export type HFn = (
     attrs?: Record<string, unknown>,
     ...children: unknown[]
 ) => { type: string; attrs: Record<string, unknown>; toString(): string };
+
+/**
+ * koishi h() 工厂适配（apply() 层调用，绑定生产 h）。
+ *
+ * h 可调用（Element 工厂），类型宽适配规避逆变检查（koishi h 的实际签名
+ * 比 HFn 更复杂，cast 到最小面即可——运行时行为不变）。单测用 mockH()
+ * （test-utils.ts），不 import koishi 主包（HANDOVER §7 坑 1）。
+ */
+export function bindKoishiH(koishiH: typeof h): HFn {
+    const factory = koishiH as unknown as HFn;
+    return (type, attrs, ...children) => factory(type, attrs, ...children);
+}
 
 /** canonical 元素 → koishi 元素（数组）。 */
 export function toKoishiElements(elements: CanonicalElement[], h: HFn): unknown[] {
