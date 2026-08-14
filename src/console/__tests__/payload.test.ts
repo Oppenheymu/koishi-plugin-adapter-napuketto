@@ -2,7 +2,7 @@
  * payload.test.ts：LoginSnapshot → LoginPanelPayload 纯函数映射单测。
  */
 import { describe, expect, it } from "vitest";
-import { loginStateMessage, toLoginPanelPayload } from "./payload.js";
+import { loginStateMessage, toLoginPanelPayload } from "../payload.js";
 
 describe("loginStateMessage", () => {
     it("各状态映射人类可读文案", () => {

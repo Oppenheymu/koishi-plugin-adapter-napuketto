@@ -8,8 +8,8 @@
 
 import type { QqInstallInfo } from "@napuketto/loader";
 import { describe, expect, it } from "vitest";
-import type { NapukettoBotConfig } from "../config.js";
-import { resolveEntry, resolveLaunchOptions } from "./launch.js";
+import type { NapukettoBotConfig } from "../../config.js";
+import { resolveEntry, resolveLaunchOptions } from "../launch.js";
 
 /** 测试配置（覆盖注入，避免探测/解析环境差异）。 */
 function makeConfig(overrides: Partial<NapukettoBotConfig> = {}): NapukettoBotConfig {
