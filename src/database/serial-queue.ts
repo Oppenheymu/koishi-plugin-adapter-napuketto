@@ -18,11 +18,15 @@ export class SerialQueue {
         const next = prev.catch(() => undefined).then(task);
         this.chains.set(key, next);
         // 链尾完成后清理（无新任务排队时删除引用，防 Map 无限增长）
-        void next.finally(() => {
-            if (this.chains.get(key) === next) {
-                this.chains.delete(key);
-            }
-        });
+        // ⚠️ 清理链前接 .catch 吞掉任务失败：next.finally() 的派生 promise
+        // 会随 next 一起 reject，被 void 丢弃 → unhandled rejection
+        void next
+            .catch(() => undefined)
+            .finally(() => {
+                if (this.chains.get(key) === next) {
+                    this.chains.delete(key);
+                }
+            });
         return next;
     }
 }

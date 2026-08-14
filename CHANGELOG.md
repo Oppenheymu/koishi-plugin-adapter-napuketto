@@ -1,5 +1,24 @@
 # koishi-plugin-adapter-napuketto
 
+## 0.0.14
+
+### Patch Changes
+
+- fix: `SerialQueue` 清理链前接 catch 吞掉任务失败——任务失败时 `finally` 派生 promise 随之
+  reject 被 `void` 丢弃，产生 unhandled rejection（vitest/Node 均报错）；行为不变
+- test: 补全该写未写的单测（+36 用例，全量 541 通过）
+
+  - `bot/utils/session.ts` `applySessionFields`：必填直赋 / 可选条件展开（exactOptionalPropertyTypes
+    不 set undefined）/ elements 特殊处理（只设 elements 不设 content）
+  - `ipc/pending.ts` `PendingRequests`：id 单调 / resolve / reject（动作名 + 错误码透传）/ 迟到响应
+    忽略 / 超时 IpcError(TIMEOUT) / rejectAll 幂等 / 超时后清理
+  - `driver/heartbeat.ts` `HeartbeatMonitor`：超时判定（seenAt 为准 / spawnAt 兜底 / 无参照不触发 /
+    边界严格大于）/ 暂停状态跳过 / start 幂等 / stop 停止轮询
+  - `bot/utils/driver-events.ts` `buildDriverEvents`：7 个事件回调的转发与日志（全 type-only import，
+    运行时零 koishi 依赖，此前「不进单测」的保守结论已推翻）
+  - `database/serial-queue.ts` `SerialQueue`：同 key 串行 / 异 key 并行 / 前序失败不阻塞 / 链尾清理
+    防 Map 增长
+
 ## 0.0.13
 
 ### Patch Changes
