@@ -13,7 +13,41 @@
     2026-08-14 00:40:55 [D] napuketto 登录状态: waiting_scan
     2026-08-14 00:40:55 [D] napuketto 二维码更新   ← onQr 已到 Bot，pushLoginPanel 被调用
 
-## 本轮已完成的修复（后端，勿重复）
+## ⚠️ 2026-08-14 深夜定论：生产环境 403 根因（0.0.18 已修，勿再绕）
+
+生产环境（NODE_ENV ≠ development → console devMode=false）登录面板不显示的**真正根因**：
+`@koishijs/plugin-console` 的 `serveAssets()` 对 `/<uiPath>/@plugin-<key>/...` 有安全检查——
+
+    if (!filename2.startsWith(this.root) && !filename2.includes("node_modules")) {
+        return ctx.status = 403;
+    }
+
+插件前端入口（addEntry 的 prod，默认 `<包根>/dist`）路径必须 startsWith(console root) 或
+包含 "node_modules"，否则 403 → 浏览器动态 import 失败 → 插件详情页 slot 不挂载 → 面板永不
+显示。**标准 npm/pnpm 安装（插件在 node_modules 下）天然通过；portal/本地路径/桌面端等
+非标准安装（路径不含 node_modules）必 403**。开发环境（yarn dev，NODE_ENV=development →
+devMode=true）走 vite dev server（/vite/@fs/ 路径），不经 serveAssets 安全检查，故正常。
+
+**实证**（koishi-dev 生产模式复现，浏览器 F12）：
+- portal 链接形态：`GET /@plugin-uvgmyp4u6t/index.js → 403`，面板不显示
+- 标准 npm 形态（复制到 node_modules）：200，面板显示「未登录（等待子进程就绪）」
+- portal + 0.0.18 修复：200，面板显示二维码（image data URI 完整）→ 登录成功后切「登录成功」
+
+**修复（0.0.18，src/bot/utils/console-entry.ts）**：`ensureServeableProd()`——prod 路径不含
+node_modules 时，把 dist 产物复制到 `<baseDir>/data/napuketto-console/node_modules/
+koishi-plugin-adapter-napuketto/dist`（路径字符串含 node_modules → 通过安全检查），
+addEntry 指向复制产物；文件未变化仅 stat 比较不重复写盘。标准安装零改动。注册日志
+console.log → ctx.logger（koishi 日志可见，此前 console.log 混在 stdout 不易定位）。
+
+**排查经验（勿重复）**：后端数据全通（provider 推送 + `get() 被调用 qr=true`）+ 面板不显示
+的组合，**先看浏览器 F12 Network 的 `@plugin-` 请求**——403 即本根因；服务端/koishi 日志
+都不会打这个 403，只能从浏览器侧看到。
+
+## 之前两轮（勿再绕）
+
+### 第二轮：provider 装配已修（0.0.16，本文件上一版内容）
+
+
 
 loader 的 launchSelfHost 在 P2（Linux/wine 分支）起变 async，但 buildLaunch 没 await，child 恒为
 undefined → driver 在 child.once 崩 → 子进程从未 spawn（表现为「无任何日志」）。已修：

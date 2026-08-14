@@ -1,5 +1,20 @@
 # koishi-plugin-adapter-napuketto
 
+## 0.0.18
+
+### Patch Changes
+
+- fix: 修复生产环境（非 development）控制台登录面板不显示——`@koishijs/plugin-console`
+  的 serveAssets 对 `/<uiPath>/@plugin-<key>/...` 有安全检查（入口文件路径必须
+  startsWith(console root) 或包含 "node_modules"，否则返回 403）：非标准安装（portal/
+  本地路径/桌面端等，插件路径不含 node_modules）下控制台前端入口加载失败、登录面板
+  永不挂载，后端数据（waiting_scan + 二维码）虽正常推送但浏览器 F12 可见
+  `GET /@plugin-<key>/index.js 403`。`registerConsoleEntry` 改为防御：prod 路径不含
+  node_modules 时把 dist 产物复制到 `<数据目录>/napuketto-console/node_modules/
+  koishi-plugin-adapter-napuketto/dist`（路径含 node_modules → 通过安全检查），
+  addEntry 指向复制产物；标准 npm/pnpm 安装（插件在 node_modules 下）行为不变，
+  直接用包内 dist。另将入口注册日志从 console.log 改为 logger（koishi 日志可见）。
+
 ## 0.0.17
 
 ### Patch Changes

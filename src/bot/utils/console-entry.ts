@@ -4,10 +4,13 @@
  * packageRoot 逐级上溯定位插件包根目录（bundle 与源码两种形态均正确）；
  * registerConsoleEntry 模块级去重——多 bot 实例只注册一次 addEntry。
  */
-import { readFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Context } from "koishi";
+
+/** 前端产物文件清单（复制用）。 */
+const CLIENT_FILES = ["index.js", "index.css"] as const;
 
 /** 控制台前端入口已注册标记（模块级去重：多 bot 实例只注册一次）。 */
 let consoleEntryRegistered = false;
@@ -45,6 +48,59 @@ function packageRoot(): string {
     throw new Error("[napuketto] 无法定位插件包根目录（未找到 package.json）");
 }
 
+/**
+ * 控制台前端产物可服务路径。
+ *
+ * ⚠️ 2026-08-14 生产环境根因修复：@koishijs/plugin-console 的 serveAssets 对
+ * `/<uiPath>/@plugin-<key>/...` 有安全检查——入口文件路径必须 startsWith(console
+ * root) 或包含 "node_modules"，否则返回 403（浏览器控制台报
+ * `GET /@plugin-<key>/index.js 403`，登录面板永不挂载）。标准 npm/pnpm 安装
+ * （插件在 node_modules 下）天然通过；portal/本地路径/桌面端等非标准安装
+ * （路径不含 node_modules）必 403。这里做防御：prod 路径不含 node_modules 时，
+ * 把 dist 产物复制到 koishi 数据目录下的 node_modules 子路径（路径字符串含
+ * node_modules → 通过安全检查），addEntry 指向复制产物。文件未变化时仅 stat
+ * 比较（mtime/size），不重复写盘。
+ */
+function ensureServeableProd(ctx: Context, root: string): string {
+    const prod = resolve(root, "dist");
+    if (prod.includes("node_modules")) {
+        return prod;
+    }
+    const target = resolve(
+        ctx.baseDir ?? process.cwd(),
+        "data",
+        "napuketto-console",
+        "node_modules",
+        "koishi-plugin-adapter-napuketto",
+        "dist",
+    );
+    let copied = false;
+    for (const name of CLIENT_FILES) {
+        const src = resolve(prod, name);
+        const srcStat = statSync(src, { throwIfNoEntry: false });
+        if (srcStat === undefined) {
+            continue;
+        }
+        const dst = resolve(target, name);
+        const dstStat = statSync(dst, { throwIfNoEntry: false });
+        if (
+            dstStat === undefined ||
+            dstStat.size !== srcStat.size ||
+            dstStat.mtimeMs < srcStat.mtimeMs
+        ) {
+            mkdirSync(target, { recursive: true });
+            copyFileSync(src, dst);
+            copied = true;
+        }
+    }
+    ctx.logger.info(
+        "[napuketto] 非标准安装（prod 路径不含 node_modules），前端产物复制到 %s%s",
+        target,
+        copied ? "（已更新）" : "（已是最新）",
+    );
+    return target;
+}
+
 /** 注册控制台登录面板前端入口（dev 由 koishi dev 动态编译；prod 走 vite 产物 dist）。 */
 export function registerConsoleEntry(ctx: Context): void {
     if (consoleEntryRegistered) {
@@ -52,14 +108,14 @@ export function registerConsoleEntry(ctx: Context): void {
     }
     consoleEntryRegistered = true;
     const root = packageRoot();
-    console.log(
-        "[napuketto] registerConsoleEntry: addEntry dev=" +
-            resolve(root, "client/index.ts") +
-            " prod=" +
-            resolve(root, "dist"),
+    const prod = ensureServeableProd(ctx, root);
+    ctx.logger.info(
+        "[napuketto] registerConsoleEntry: addEntry dev=%s prod=%s",
+        resolve(root, "client/index.ts"),
+        prod,
     );
     ctx.console.addEntry({
         dev: resolve(root, "client/index.ts"),
-        prod: resolve(root, "dist"),
+        prod,
     });
 }
