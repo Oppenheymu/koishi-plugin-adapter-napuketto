@@ -18,7 +18,8 @@
  * 只按 Bot 基类能力使用，无需 koishi 特有 API。
  */
 
-import { resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Context } from "@satorijs/core";
 import { Bot, h, type Context as KoishiContext, type MessageEncoder, type Universal } from "koishi";
@@ -54,13 +55,37 @@ const LOG_LEVEL_MAP: Record<LogLevel, number> = {
 
 let consoleEntryRegistered = false;
 
-/** 包根目录（开发态 ESM 直载：import.meta.url 定位；生产态 CJS bundle：__dirname 兜底）。 */
+/**
+ * 包根目录（定位 client/ 与 dist/）。
+ *
+ * ⚠️ 2026-08-14 修复（二维码不显示根因）：bundle（lib/index.cjs，深 1 层）与
+ * 源码（src/bot/bot.ts，深 2 层）的文件深度不同，`new URL("../..")` 只对源码
+ * 形态正确；且 esbuild 转译 CJS 时把 import.meta.url shim 成可用（try 不抛错），
+ * __dirname 兜底分支永远走不到——最终 dev/prod 入口被注册到 node_modules 根
+ * （路径不存在），控制台面板永不挂载。改为逐级上溯找 package.json（校验包名），
+ * bundle 与源码两种形态均正确。
+ */
 function packageRoot(): string {
+    let dir: string;
     try {
-        return fileURLToPath(new URL("../..", import.meta.url));
+        dir = fileURLToPath(new URL(".", import.meta.url));
     } catch {
-        return resolve(__dirname, "..");
+        dir = __dirname;
     }
+    for (let i = 0; i < 5; i += 1) {
+        try {
+            const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as {
+                name?: string;
+            };
+            if (pkg.name === "koishi-plugin-adapter-napuketto") {
+                return dir;
+            }
+        } catch {
+            // 该层无 package.json（或不可读），继续上溯
+        }
+        dir = dirname(dir);
+    }
+    throw new Error("[napuketto] 无法定位插件包根目录（未找到 package.json）");
 }
 
 /** 注册控制台登录面板前端入口（dev 由 koishi dev 动态编译；prod 走 vite 产物 dist）。 */
