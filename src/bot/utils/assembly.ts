@@ -13,13 +13,13 @@
  * （HANDOVER §7 坑 1）。
  */
 import { type Context as KoishiContext, h as koishiH, type Logger, type Universal } from "koishi";
-import { NapukettoInternal } from "../actions/index.js";
-import type { NapukettoBotConfig } from "../config.js";
-import { bindKoishiH } from "../events/elements.js";
-import { NapukettoEventBridge, type NapukettoSessionFields } from "../events/index.js";
-import type { NapukettoIpcClient } from "../ipc/index.js";
-import { NapukettoLoginState } from "../login/index.js";
-import { NapukettoLoginPanel } from "./login-panel.js";
+import { NapukettoInternal } from "../../actions/index.js";
+import type { NapukettoBotConfig } from "../../config.js";
+import { bindKoishiH } from "../../events/elements.js";
+import { NapukettoEventBridge, type NapukettoSessionFields } from "../../events/index.js";
+import type { NapukettoIpcClient } from "../../ipc/index.js";
+import { NapukettoLoginState } from "../../login/index.js";
+import { NapukettoLoginPanel } from "../login-panel.js";
 import { toUserFields } from "./transform.js";
 
 // ── 登录状态机 ──

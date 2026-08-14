@@ -27,18 +27,18 @@ import { NapukettoDriver } from "../driver/index.js";
 import type { NapukettoEventBridge, NapukettoSessionFields } from "../events/index.js";
 import type { NapukettoIpcClient } from "../ipc/index.js";
 import type { NapukettoLoginState } from "../login/index.js";
+import { buildLaunch } from "./launch.js";
+import type { NapukettoLoginPanel } from "./login-panel.js";
+import { NapukettoMessageEncoder } from "./message.js";
 import {
     createBridge,
     createInternal,
     createLoginState,
     createPanel,
     resolveAssignPolicy,
-} from "./assembly.js";
-import { buildDriverEvents } from "./driver-events.js";
-import { buildLaunch } from "./launch.js";
-import type { NapukettoLoginPanel } from "./login-panel.js";
-import { NapukettoMessageEncoder } from "./message.js";
-import { applySessionFields } from "./session.js";
+} from "./utils/assembly.js";
+import { buildDriverEvents } from "./utils/driver-events.js";
+import { applySessionFields } from "./utils/session.js";
 import {
     type RawFriend,
     type RawGroup,
@@ -47,7 +47,7 @@ import {
     toGuildList,
     toTextChannel,
     toUserFields,
-} from "./transform.js";
+} from "./utils/transform.js";
 
 /** logLevel 配置 → reggol 数字（reggol：DEBUG=3 / INFO=2 / ERROR=1 / SILENT=0）。 */
 const LOG_LEVEL_MAP: Record<LogLevel, number> = {

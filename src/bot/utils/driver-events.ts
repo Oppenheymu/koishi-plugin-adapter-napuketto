@@ -9,9 +9,9 @@
  * 接口）——不进单测（HANDOVER §7 坑 1 同源）。
  */
 import type { Logger } from "koishi";
-import type { DriverEvents } from "../driver/types.js";
-import type { NapukettoEventBridge } from "../events/index.js";
-import type { NapukettoLoginState } from "../login/index.js";
+import type { DriverEvents } from "../../driver/types.js";
+import type { NapukettoEventBridge } from "../../events/index.js";
+import type { NapukettoLoginState } from "../../login/index.js";
 
 /** driver events 主机（bot 层提供依赖，避免工厂直接依赖 NapukettoBot 全量）。 */
 export interface DriverEventsHost {

@@ -525,20 +525,20 @@ failed`（现象：发送方日志 `已缓存海报图片` 成功但 `msg.sendMe
 **定位**：`NapukettoBot extends Bot` 注册为 koishi 平台，把 §5.2~§5.10 全部装配起来。
 **验证点：koishi 控制台收到消息 + 能回复**（事件桥 + 动作桥端到端）。
 
-**形态**：`src/bot/` 目录（单文件 ≤300 行约束，2026-08-14 fallow 拆分后）：
+**形态**：`src/bot/` 目录（单文件 ≤300 行约束，2026-08-14 fallow 拆分 + utils 归类）：
 
-| 文件 | 职责 |
+| 路径 | 职责 |
 |---|---|
 | `bot.ts` | `NapukettoBot extends Bot`：平台注册、生命周期、override 动作方法、dispatch（类主体） |
-| `assembly.ts` | 构造装配工厂（createLoginState/createPanel/createBridge/createInternal/resolveAssignPolicy，host 注入） |
-| `transform.ts` | kernel → koishi Universal 形状翻译纯函数（好友/群/频道/登录信息，可单测） |
-| `driver-events.ts` | driver 事件接线工厂（buildDriverEvents，host 注入） |
 | `message.ts` | `NapukettoMessageEncoder extends MessageEncoder`（元素收集 → internal.sendMessage） |
 | `launch.ts` | launch 工厂（launchSelfHost 组装 + 包入口解析，纯函数可单测） |
-| `console-entry.ts` | 控制台前端入口注册（packageRoot 逐级上溯 + addEntry，模块级去重） |
 | `login-panel.ts` | `NapukettoLoginPanel`：面板装配/reload 去重/连接回放/指令上行（deps 注入解耦） |
-| `session.ts` | `applySessionFields` 纯函数（可选字段条件赋值 + elements 特殊处理） |
-| `index.ts` | barrel |
+| `utils/assembly.ts` | 构造装配工厂（createLoginState/createPanel/createBridge/createInternal/resolveAssignPolicy，host 注入） |
+| `utils/transform.ts` | kernel → koishi Universal 形状翻译纯函数（好友/群/频道/登录信息，可单测） |
+| `utils/driver-events.ts` | driver 事件接线工厂（buildDriverEvents，host 注入） |
+| `utils/session.ts` | `applySessionFields` 纯函数（可选字段条件赋值 + elements 特殊处理） |
+| `utils/console-entry.ts` | 控制台前端入口注册（packageRoot 逐级上溯 + addEntry，模块级去重） |
+| `index.ts` | barrel（只导出公共面：NapukettoBot / launch / message） |
 
 **usage/Config 挂类上（关键决策，2026-08-14 根因修复）**：
 `usage`（插件详情页说明）与 `Config`（配置 schema）通过 `export namespace NapukettoBot`

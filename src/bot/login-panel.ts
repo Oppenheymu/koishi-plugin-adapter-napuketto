@@ -16,7 +16,7 @@ import type { Context, Logger } from "koishi";
 import { loginServiceId, NapukettoLoginProvider, toLoginPanelPayload } from "../console/index.js";
 import type { IpcControlPayload } from "../ipc/types.js";
 import type { LoginSnapshot } from "../login/types.js";
-import { registerConsoleEntry } from "./console-entry.js";
+import { registerConsoleEntry } from "./utils/console-entry.js";
 
 /** 面板装配依赖（bot 层注入，职责解耦：面板不直接持有 IPC client）。 */
 export interface LoginPanelDeps {

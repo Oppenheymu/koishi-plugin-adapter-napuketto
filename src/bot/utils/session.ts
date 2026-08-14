@@ -5,7 +5,7 @@
  * elements 特殊处理」两段。本模块抽出纯函数 applySessionFields（宽松结构，
  * 不依赖 koishi 具体 Session 类型，可单测），bot 层只做预热 + 构造 + 派发。
  */
-import type { NapukettoSessionFields } from "../events/index.js";
+import type { NapukettoSessionFields } from "../../events/index.js";
 
 /** session 宽松结构（本模块消费的字段子集，避免依赖 koishi Session 全类型）。 */
 export interface SessionLike {
