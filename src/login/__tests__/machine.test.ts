@@ -6,8 +6,8 @@
  * snapshot 快照。
  */
 import { describe, expect, it, vi } from "vitest";
-import { NapukettoLoginState } from "./machine.js";
-import type { LoginView } from "./types.js";
+import { NapukettoLoginState } from "../machine.js";
+import type { LoginView } from "../types.js";
 
 const QR = { pngBase64: "aGk=", qrcodeUrl: "https://x" } as const;
 
