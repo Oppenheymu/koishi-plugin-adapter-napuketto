@@ -1,5 +1,14 @@
 # koishi-plugin-adapter-napuketto
 
+## 0.0.21
+
+### Patch Changes
+
+- f8c17bd: fix(adapter): 修复插件停止再启动后控制台登录面板消失——`registerConsoleEntry` 的去重 flag 改为随作用域 dispose 重置（`ctx.console.addEntry` 创建的 Entry 是作用域绑定的，插件 stop 时 console 自动移除 entry，flag 不重置则重启后不重新注册）。另优化面板观感：二维码圆角、按钮间距、面板内边距。
+- 5bb12a5: refactor(adapter): IPC 协议消费 @napuketto/loader 的 zod 单一来源契约——删除本地 src/ipc/types.ts 手工镜像，codec 解码改用 IpcMessageSchema.safeParse（顺带校验 payload 形状）。
+- Updated dependencies [5bb12a5]
+  - @napuketto/loader@0.0.15
+
 ## 0.0.20
 
 ### Patch Changes
