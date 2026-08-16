@@ -4,6 +4,8 @@ dist/
 
 # local / temp
 external/
+.eslint-tmp-cache/
+.eslint-tmp/
 
 # dependencies
 node_modules/
