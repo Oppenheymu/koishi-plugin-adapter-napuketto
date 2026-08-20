@@ -1,5 +1,13 @@
 # koishi-plugin-adapter-napuketto
 
+## 0.0.22
+
+### Patch Changes
+
+- fix(adapter): 新增账号一致性校验，杜绝「事件收到、dispatch 有日志、指令零响应」的静默丢消息事故。子进程登录走「quickUin 快速登录 → QR 回退」，QR 谁扫谁就是登录账号，与插件配置 `selfId` 无关；此前实际登录 uin 与配置不一致时会被静默采用，后果是：① 数据目录按配置 `selfId` 命名，另一账号的 QQ 数据写进该目录；② koishi 侧 `session.selfId` / `channel.assignee` / `binding` 全按实际 uin 落库，事后换回正确账号后 koishi 的受理人闸门（`@koishijs/core` middleware 里 `channel.assignee !== session.selfId` 直接 return，无日志无报错）会把这些频道的**所有群消息静默丢弃**，且 `assignee` 不会自动修复（行已存在，`autoAssign` 只在缺行时生效）。现在 ready 阶段校验实际登录 uin 必须等于配置 `selfId`，不一致则拒绝上线（stop driver + offline + 可操作的 error 日志），并拒绝派发任何消息，避免污染数据目录与 koishi 落库。另：dispatch 关键日志补打 `self=`（静默丢弃的判据都跟 selfId 有关，日志缺它无法现场定位）。
+- Updated dependencies
+  - @napuketto/loader@0.0.19
+
 ## 0.0.21
 
 ### Patch Changes

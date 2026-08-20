@@ -88,6 +88,8 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
     private readonly autoAssign: boolean;
     /** autoAuthorize 语义（构造时解析一次；koishi 默认 1，0 = 不落库）。 */
     private readonly autoAuthorize: number;
+    /** 账号不一致（配置 selfId ≠ 实际登录 uin）：拒绝上线并拒绝派发，见 checkIdentity。 */
+    private identityMismatch = false;
 
     constructor(ctx: Context, config: NapukettoBotConfig) {
         super(ctx, config, "napuketto");
@@ -263,7 +265,9 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
                 logger: this.logger,
                 login: this.login,
                 bridge: this.bridge,
-                isDisconnected: () => this.status === BOT_STATUS.DISCONNECT,
+                // 账号不一致也算「主动断开」：子进程退出时不再覆盖 checkIdentity 设的错误
+                isDisconnected: () =>
+                    this.status === BOT_STATUS.DISCONNECT || this.identityMismatch,
                 handleReady: () => this.handleReady(),
                 offline: (error) => {
                     this.offline(error);
@@ -285,14 +289,60 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
             this.clientRef.current = client;
         }
         this.login.onReady();
+        // ⚠️ 账号一致性校验必须在 online 之前（见 checkIdentity）：不一致时
+        // 一条消息都不能派发，否则 koishi 会按错账号落库 assignee/binding。
+        if (!this.checkIdentity()) {
+            return;
+        }
         this.online();
         void this.getLogin().catch((error) => {
             this.logger.warn("[napuketto] 拉取登录信息失败: %o", error);
         });
     }
 
+    /**
+     * 账号一致性校验：实际登录 uin 必须等于配置 selfId，否则拒绝上线。
+     *
+     * ⚠️ 2026-08-20 生产事故根治。子进程登录走「quickUin 快速登录 → QR 回退」，
+     * QR 谁扫谁就是登录账号——与配置 selfId 无关。两者不一致时后果隐蔽且严重：
+     *  ① 数据目录按配置 selfId 命名（launch.ts cfgDir），另一账号的 QQ 数据会
+     *     写进这个目录（两个账号共用一个数据目录）；
+     *  ② koishi 侧 session.selfId / channel.assignee / binding 全按**实际** uin
+     *     落库。事后换回正确账号后，koishi 的受理人闸门（@koishijs/core
+     *     middleware：`channel.assignee !== session.selfId` 直接 return，无日志
+     *     无报错）会把这些频道的**所有群消息静默丢弃**——表现为「事件收到、
+     *     dispatch 有日志、指令零响应」，且 assignee 不会被自动修复（行已存在，
+     *     autoAssign 只在缺行时生效），极难排查。
+     * 因此这里不静默采用实际 uin，而是拒绝上线 + 给出可操作提示。
+     */
+    private checkIdentity(): boolean {
+        const actual = this.login.snapshot.self?.uin;
+        if (actual === undefined || actual === "" || actual === this.config.selfId) {
+            return true;
+        }
+        this.identityMismatch = true;
+        this.logger.error(
+            "[napuketto] 账号不一致：配置 selfId=%s，实际登录 uin=%s —— 已拒绝上线，" +
+                "以免污染数据目录与 koishi 的 channel.assignee/binding（会导致群消息被" +
+                "静默丢弃）。请把插件配置 selfId 改成 %s，或改用 %s 重新扫码登录。",
+            this.config.selfId,
+            actual,
+            actual,
+            this.config.selfId,
+        );
+        this.driver?.stop();
+        this.offline(
+            new Error(`账号不一致：配置 selfId=${this.config.selfId}，实际登录 uin=${actual}`),
+        );
+        return false;
+    }
+
     /** kernel 事件 session 字段 → koishi session → dispatch。 */
     private async dispatchSession(fields: NapukettoSessionFields): Promise<void> {
+        // 账号不一致：拒绝派发（落库会把 assignee/binding 写成错账号，见 checkIdentity）
+        if (this.identityMismatch) {
+            return;
+        }
         // 原子预热 channel/user（design.md §5.13，2026-08-09 并发竞态修复）：
         // 预热后 koishi SELECT 必命中，永远走不到 get-or-create 的并发 INSERT
         //（根因 koishijs/koishi#1545）。预热失败不阻断派发（框架兜底）。
@@ -310,8 +360,9 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
         applySessionFields(session, fields);
         // 消息路径关键日志（info，默认可见）：session 字段 + 渲染后文本
         this.logger.info(
-            "[napuketto] dispatch: type=%s channel=%s user=%s isDirect=%s msg=%s",
+            "[napuketto] dispatch: type=%s self=%s channel=%s user=%s isDirect=%s msg=%s",
             fields.type,
+            fields.selfId,
             fields.channelId ?? "?",
             fields.userId ?? "?",
             fields.isDirect,
