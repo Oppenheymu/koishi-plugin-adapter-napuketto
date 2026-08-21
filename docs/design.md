@@ -566,7 +566,7 @@ koishi 框架（bots 配置实例化）
 
 | 钩子 | 行为 |
 |---|---|
-| `constructor` | `super(ctx, config, 'napuketto')`；`selfId = config.selfId`（koishi `defineAccessor` 写 user.id）；internal/login 实例化；user.avatar 用 q.qlogo.cn（napcat 同款） |
+| `constructor` | `super(ctx, config, 'onebot')`；`selfId = config.selfId`（koishi `defineAccessor` 写 user.id）；internal/login 实例化；user.avatar 用 q.qlogo.cn（napcat 同款） |
 | `start()` | `status = CONNECT` → 建 driver（launch 工厂）→ `driver.start()`；异常 `offline(error)` |
 | driver `onReady` | `clientRef.current = driver.currentClient`；`login.onReady()`；重建事件桥（client 换实例）；`online()`；`getLogin()` 更新 user |
 | driver `onExit` | `login.onExit()`（登录状态归 idle）；非 stop 时 `offline()` |

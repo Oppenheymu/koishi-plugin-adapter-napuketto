@@ -56,7 +56,7 @@ export class NapukettoEventBridge implements EventBridge {
     private dispatchMessage(msg: RawMessage): void {
         const session = adaptRawMessage(msg, {
             selfId: this.options.selfId(),
-            platform: this.options.platform ?? "napuketto",
+            platform: this.options.platform ?? "onebot",
             h: this.options.h,
         });
         this.options.dispatch(session);

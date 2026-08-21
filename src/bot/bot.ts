@@ -57,7 +57,7 @@ const LOG_LEVEL_MAP: Record<LogLevel, number> = {
     silent: 0,
 };
 
-/** NapukettoQQ 的 koishi Bot（平台 "napuketto"）。
+/** NapukettoQQ 的 koishi Bot（平台 "onebot"）。
  *
  * ⚠️ 不带泛型 C（2026-08-08 修复）：`C extends Context` 泛型在
  * exactOptionalPropertyTypes 下触发 koishi Context 与 satorijs/cordis Context 的
@@ -92,7 +92,7 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
     private identityMismatch = false;
 
     constructor(ctx: Context, config: NapukettoBotConfig) {
-        super(ctx, config, "napuketto");
+        super(ctx, config, "onebot");
         // 日志等级（用户可配，默认 debug——多点日志便于排查；reggol setter 按名字
         // 写全局 Logger.levels，只影响 napuketto 及其子 namespace）
         this.logger.level = LOG_LEVEL_MAP[config.logLevel ?? "debug"];

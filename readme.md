@@ -40,7 +40,7 @@ npm install koishi-plugin-adapter-napuketto
 
 ## 配置
 
-本插件无需插件级配置（配置留空即可），实际配置挂在 **bots** 上——平台名为 `napuketto`：
+本插件无需插件级配置（配置留空即可），实际配置挂在 **bots** 上——平台名为 `onebot`：
 
 ```yaml
 plugins:
@@ -48,10 +48,10 @@ plugins:
 
 bots:
   # 方式一：显式指定 QQ 号（推荐）
-  napuketto:3567141148:
+  onebot:3567141148:
     selfId: "3567141148"
   # 方式二：省略 selfId 的 key（仅单账号时可用）
-  napuketto:
+  onebot:
     selfId: "3567141148"
 ```
 

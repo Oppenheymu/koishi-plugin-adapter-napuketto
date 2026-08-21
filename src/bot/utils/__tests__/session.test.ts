@@ -30,7 +30,7 @@ const FULL_FIELDS: NapukettoSessionFields = {
     type: "message",
     subtype: "group",
     selfId: "10001",
-    platform: "napuketto",
+    platform: "onebot",
     timestamp: 1_700_000_000_000,
     userId: "u1",
     channelId: "g1",
@@ -46,13 +46,13 @@ describe("applySessionFields", () => {
         applySessionFields(session, {
             type: "message",
             selfId: "10001",
-            platform: "napuketto",
+            platform: "onebot",
             timestamp: 1_700_000_000_000,
         });
         expect(session).toMatchObject({
             type: "message",
             selfId: "10001",
-            platform: "napuketto",
+            platform: "onebot",
             timestamp: 1_700_000_000_000,
         });
         // 只有 4 个必填字段被 set，其余可选字段不 set
@@ -81,7 +81,7 @@ describe("applySessionFields", () => {
         applySessionFields(session, {
             type: "message",
             selfId: "1",
-            platform: "napuketto",
+            platform: "onebot",
             timestamp: 0,
             userId: "u1", // 部分可选字段出现
         });
@@ -105,7 +105,7 @@ describe("applySessionFields", () => {
         applySessionFields(session, {
             type: "message",
             selfId: "1",
-            platform: "napuketto",
+            platform: "onebot",
             timestamp: 0,
             userId: "u1",
         });

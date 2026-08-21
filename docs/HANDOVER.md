@@ -94,7 +94,7 @@ koishi 插件（本包）                    Napuketto 子进程（self-host.cjs
 - 载荷经 IPC `client.request` 到 loader 侧动作表（`msg.sendMessage` 等，peerUin 自动转 uid）
 
 ### 3.6 `src/bot/`（Bot 集成，端到端验证点）
-- `bot.ts`：`NapukettoBot extends Bot`（平台 "napuketto"，**不写 Adapter**——override `start()`
+- `bot.ts`：`NapukettoBot extends Bot`（平台 "onebot"，**不写 Adapter**——override `start()`
   spawn driver / `stop()` 停 driver，koishi 构造自动注册 ready → start）
   - 构造：selfId → user.id；internal = `NapukettoInternal`（request 绑定 `clientRef`，null 抛错）；
     bridge = `NapukettoEventBridge`（dispatch → `this.dispatchSession`，h 用 `adaptH` 适配）

@@ -34,7 +34,7 @@ export interface EventBridgeOptions {
     selfId: () => string;
     /** koishi h() 工厂（apply() 层传 bindKoishiH(h)）。 */
     h: HFn;
-    /** 平台名（默认 "napuketto"）。 */
+    /** 平台名（默认 "onebot"）。 */
     platform?: string;
 }
 

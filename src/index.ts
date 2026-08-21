@@ -1,8 +1,8 @@
 /**
  * index.ts：koishi-plugin-adapter-napuketto 插件入口。
  *
- * 默认导出 NapukettoBot（koishi Bot 子类）——koishi 自动 `ctx.platform('napuketto', ...)`
- * 注册平台，按用户 bots 配置（`bots: { 'napuketto:<uin>': {...} }`）实例化；
+ * 默认导出 NapukettoBot（koishi Bot 子类）——koishi 自动 `ctx.platform('onebot', ...)`
+ * 注册平台，按用户 bots 配置（`bots: { 'onebot:<uin>': {...} }`）实例化；
  * Bot 构造自动注册 `ctx.on('ready', () => this.start())` → start() spawn 自建宿主
  * 子进程（driver → IPC）→ 登录 → 事件桥/动作桥装配。控制台登录面板
  * （design.md §5.12）在 bot 构造内装配（console 服务就绪后：DataService 推送 +

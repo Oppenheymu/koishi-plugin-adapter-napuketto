@@ -137,7 +137,7 @@ export function createBridge(host: BridgeHost): NapukettoEventBridge {
         selfId: () => host.getLogin().snapshot.self?.uin ?? host.config.selfId,
         // koishi h 可调用（Element 工厂）；绑定生产 h（elements.ts bindKoishiH）
         h: bindKoishiH(koishiH),
-        platform: "napuketto",
+        platform: "onebot",
     });
 }
 

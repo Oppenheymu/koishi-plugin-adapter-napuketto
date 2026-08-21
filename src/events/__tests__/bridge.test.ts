@@ -17,7 +17,7 @@ describe("NapukettoEventBridge", () => {
         const bridge = new NapukettoEventBridge({
             dispatch,
             selfId: () => "10086",
-            platform: "napuketto",
+            platform: "onebot",
             h: mockH(),
         });
         bridge.handle(

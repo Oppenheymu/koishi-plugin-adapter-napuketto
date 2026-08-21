@@ -15,7 +15,7 @@ function adaptOpts(overrides: Partial<{ selfId: string; platform: string }> = {}
 } {
     return {
         selfId: overrides.selfId ?? "10086",
-        platform: overrides.platform ?? "napuketto",
+        platform: overrides.platform ?? "onebot",
         h: mockH(),
     };
 }
@@ -45,7 +45,7 @@ describe("adaptRawMessage", () => {
         expect(session.type).toBe("message");
         expect(session.subtype).toBe("group");
         expect(session.selfId).toBe("10086");
-        expect(session.platform).toBe("napuketto");
+        expect(session.platform).toBe("onebot");
         expect(session.userId).toBe("20001");
         expect(session.channelId).toBe("10001");
         expect(session.guildId).toBe("10001");

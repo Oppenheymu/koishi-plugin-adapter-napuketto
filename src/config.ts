@@ -1,7 +1,7 @@
 /**
  * config.ts：koishi bot 配置 schema（design.md §5.11）。
  *
- * koishi 平台 bot 配置（`bots: { 'napuketto:<uin>': {...} }`）：
+ * koishi 平台 bot 配置（`bots: { 'onebot:<uin>': {...} }`）：
  *  - selfId：登录账号（QQ 号，必填，数据目录账号隔离 + 快速登录账号）
  *  - qqPath / stubDir：loader 引导参数（缺省自动探测/包内默认）
  *  - dataDir：数据根目录（缺省 kernel resolveDataRoot 默认）
