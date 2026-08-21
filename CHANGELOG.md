@@ -1,5 +1,11 @@
 # koishi-plugin-adapter-napuketto
 
+## 0.0.23
+
+### Patch Changes
+
+- feat(adapter): 平台名由 `napuketto` 改为 `onebot`——大量第三方插件按 `session.platform === "onebot"` 判断平台（如各类 onebot 工具/指令插件），平台名不匹配时静默不响应。改动后 `bots` 配置键同步改为 `onebot:<uin>`（`napuketto:<uin>` 旧键失效，需迁移）。底层协议仍是自研 wrapper.node 层，仅对外平台标识对齐 onebot 生态。
+
 ## 0.0.22
 
 ### Patch Changes
