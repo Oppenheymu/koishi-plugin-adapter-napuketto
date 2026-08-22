@@ -1,10 +1,19 @@
 /**
  * internal.test.ts：NapukettoInternal 单测（mock request 注入，design.md §5.10）。
+ *
+ * 语音用例（2026-08-23）：sendMessage 里 audio → voice 后统一转 silk
+ * （mock @napuketto/media，真实文件头判断在 media.test.ts 覆盖）。
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NapukettoInternal } from "../internal.js";
 import type { RequestFn } from "../types.js";
+
+const { encodePcmToSilkMock } = vi.hoisted(() => ({ encodePcmToSilkMock: vi.fn() }));
+vi.mock("@napuketto/media", () => ({ encodePcmToSilk: encodePcmToSilkMock }));
 
 /** 构造 internal + mock request（记录调用，可自定义返回）。 */
 function createInternal(
@@ -18,7 +27,21 @@ function createInternal(
     return { internal, request };
 }
 
+/** koishi audio 元素宽松结构（toCanonicalElements 消费）。 */
+function audioElement(src: string): { type: string; attrs: { src: string }; toString(): string } {
+    return { type: "audio", attrs: { src }, toString: () => "[audio]" };
+}
+
 describe("NapukettoInternal", () => {
+    let dir: string;
+    beforeEach(() => {
+        dir = mkdtempSync(join(tmpdir(), "napuketto-koishi-internal-"));
+        encodePcmToSilkMock.mockReset();
+    });
+    afterEach(() => {
+        rmSync(dir, { recursive: true, force: true });
+    });
+
     it("sendMessage：群聊 → msg.sendMessage（元素反向映射）", async () => {
         const { internal, request } = createInternal(async () => ({ msgId: "m1" }));
         const ids = await internal.sendMessage("123456789", "你好");
@@ -27,6 +50,23 @@ describe("NapukettoInternal", () => {
             chatType: 2,
             peerUin: "123456789",
             elements: [{ type: "text", text: "你好" }],
+        });
+    });
+
+    it("sendMessage：语音（audio）→ 转 silk 后发（非 silk 原路径不直发）", async () => {
+        const { internal, request } = createInternal(async () => ({ msgId: "m3" }));
+        const ogg = join(dir, "voice.ogg");
+        writeFileSync(ogg, Buffer.from("OggS........"));
+        const silk = join(dir, "voice.silk");
+        encodePcmToSilkMock.mockResolvedValue(silk);
+
+        const ids = await internal.sendMessage("123456789", [audioElement(ogg)]);
+
+        expect(ids).toEqual(["m3"]);
+        expect(request).toHaveBeenCalledWith("msg.sendMessage", {
+            chatType: 2,
+            peerUin: "123456789",
+            elements: [{ type: "voice", path: silk }],
         });
     });
 

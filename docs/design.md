@@ -517,6 +517,17 @@ URL 语义解析图片路径，透传 `C:\...` 反斜杠路径读不到文件，
 failed`（现象：发送方日志 `已缓存海报图片` 成功但 `msg.sendMessage` 失败）。正斜杠
 路径无此问题（Chromium/Electron 内部按 URL 处理路径）。
 
+**语音 silk 转码（2026-08-23 线上修复）**：`audio` → canonical `voice` 后、发 IPC
+`msg.sendMessage` 前，统一经 `actions/media.ts` 的 `ensureVoiceSilk` 把语音转成
+**silk v3**（QQ 语音协议格式）。背景：此前 koishi 路径不做转码，ogg/mp3 等非 silk
+音频被 `MsgApi.preparePttElement` 原样复制到 `Ptt\Ori\{md5}.amr` 并上传（线上实证
+`OggS` 魔数原样落盘），QQ 播放器只能解码 silk/amr → **语音发送成功但收件人无法播放**。
+修复：`ensureSilk(path)` 读文件头 8 字节，`#!SILK` 前缀原样返回；否则走
+`@napuketto/media` 的 `encodePcmToSilk`（ffmpeg 归一化 24000Hz 单声道 + silk-wasm
+编码，产出标准 `#!SILK_V3` 头文件，实证 `ogg 1.3MB → silk 450KB`）；转码失败回落
+原路径（kernel 发送兜底，不阻断）。依赖：新增 `@napuketto/media`（apps 层自由依赖，
+media 与 kernel 解耦红线不涉及）。
+
 **可单测**：`elements.ts` / `channel.ts` 纯函数直测；`internal.ts` 注入 mock request
 （`vi.fn`）断言动作名 + params。koishi 主包不 import（HANDOVER §7 坑 1），类型宽松结构。
 
