@@ -259,7 +259,13 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
             return;
         }
         const driver = new NapukettoDriver({
-            launch: buildLaunch(this.config),
+            // launch 工厂：logger 接线 onStage（下载/解包/win-node/启动阶段日志，
+            // 2026-08-23 起——此前首次下载 313MB 全程静默，用户以为流程没生效）
+            launch: buildLaunch(this.config, {
+                onStage: (message) => {
+                    this.logger.info("[napuketto] %s", message);
+                },
+            }),
             // 事件接线（driver-events.ts 工厂：logger/login/bridge/offline 依赖注入）
             events: buildDriverEvents({
                 logger: this.logger,

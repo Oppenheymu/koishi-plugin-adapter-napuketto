@@ -27,12 +27,24 @@ class FakeChild implements ChildProcessLike {
     });
     private readonly exitListeners: Array<(code: number | null, signal: string | null) => void> =
         [];
+    private readonly errorListeners: Array<(err: Error) => void> = [];
     killed = false;
     pid = 9999;
 
-    once(event: "exit", listener: (code: number | null, signal: string | null) => void): unknown {
+    /**
+     * ⚠️ 必须单方法实现（联合签名）：TS 类里两个同名方法 = 重载语义，转译后
+     * 只有最后一个实现保留（exit 监听丢失，driver 测试曾静默失效）。
+     */
+    once(
+        event: "exit" | "error",
+        listener: ((code: number | null, signal: string | null) => void) | ((err: Error) => void),
+    ): unknown {
         if (event === "exit") {
-            this.exitListeners.push(listener);
+            this.exitListeners.push(
+                listener as (code: number | null, signal: string | null) => void,
+            );
+        } else if (event === "error") {
+            this.errorListeners.push(listener as (err: Error) => void);
         }
         return this;
     }
@@ -46,6 +58,13 @@ class FakeChild implements ChildProcessLike {
     emitExit(code: number | null, signal: string | null): void {
         for (const listener of [...this.exitListeners]) {
             listener(code, signal);
+        }
+    }
+
+    /** 触发子进程启动失败（模拟 spawn ENOENT）。 */
+    emitError(err: Error): void {
+        for (const listener of [...this.errorListeners]) {
+            listener(err);
         }
     }
 }

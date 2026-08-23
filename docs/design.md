@@ -192,6 +192,11 @@ koishi 插件                         Napuketto 子进程
 - **消息格式**：`{ type, id?, payload }`；请求-响应用 `id` 匹配（Promise 等待）
 - **心跳**：子进程定期发 `ping`，插件超时未收 → 判定失联 → 重启（指数退避）
 - **崩溃**：子进程退出码非 0 → 插件记录错误 → 按策略重启（可配置次数）
+- **启动前准备（2026-08-23 WSL 事故后新增）**：Linux 首次启动会下载 313MB QQ 安装包 +
+  Windows 版 node.exe（wine 场景）——`buildLaunch` 把 loader 的 `onStage` 阶段回调
+  接 logger.info（下载/校验/解包/提取/win-node/spawn 全程可见，不再静默 5 分钟）；
+  wine 缺失时 loader 预检抛可读错误（apt 指引），driver 侧再挂 child 'error' 监听兜底
+  ——此前 spawn ENOENT 异步 'error' 无监听者 = `uncaughtException` 崩掉整个 koishi。
 
 ### 5.3 事件翻译：kernel 事件 → koishi session
 

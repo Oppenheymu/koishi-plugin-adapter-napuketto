@@ -1,5 +1,13 @@
 # koishi-plugin-adapter-napuketto
 
+## 0.0.24
+
+### Patch Changes
+
+- fix(adapter): WSL 生产事故修复——① Linux 首次启动全程可见：`buildLaunch` 把 loader 的 `onStage` 阶段回调接 logger.info（下载 313MB 安装包/校验/解包/提取/win-node/spawn 各阶段提示），此前静默数分钟用户以为流程没生效；② spawn 前 wine 预检（loader 抛可读错误 + apt 指引），driver 再挂 child `error` 监听兜底——此前 wine 缺失时 spawn 异步 `error` 无监听者 = `uncaughtException` 崩掉整个 koishi。
+- Updated dependencies
+  - @napuketto/loader@0.0.23
+
 ## 0.0.23
 
 ### Patch Changes

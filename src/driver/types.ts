@@ -30,6 +30,11 @@ export interface ChildProcessLike {
     stdin: NodeJS.WritableStream | null;
     /** 监听退出（退出码 + 信号）。 */
     once(event: "exit", listener: (code: number | null, signal: string | null) => void): unknown;
+    /**
+     * 监听启动失败（spawn ENOENT 等，Node 异步 emit——无监听者会抛
+     * uncaughtException 崩掉宿主进程，2026-08-23 WSL 实测 koishi 崩溃）。
+     */
+    once(event: "error", listener: (err: Error) => void): unknown;
     kill(signal?: NodeJS.Signals | number): boolean;
     pid?: number;
 }

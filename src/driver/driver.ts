@@ -60,6 +60,8 @@ export class NapukettoDriver {
     private restartCount = 0;
     private stopping = false;
     private spawnAt = 0;
+    /** spawn error 已处理（ENOENT 等）：伴随触发的 exit 事件跳过，防重复 onError/重启。 */
+    private spawnFailed = false;
     private readonly heartbeat: HeartbeatMonitor;
     private restartTimer: NodeJS.Timeout | null = null;
     private stopTimer: NodeJS.Timeout | null = null;
@@ -145,6 +147,7 @@ export class NapukettoDriver {
 
     private async spawnProcess(reason: "start" | "restart"): Promise<void> {
         this.setState(reason === "start" ? "spawning" : "restarting");
+        this.spawnFailed = false;
         let result: DriverLaunchResult;
         try {
             result = await this.launch();
@@ -154,8 +157,20 @@ export class NapukettoDriver {
         }
         const { child, cleanup } = result;
         this.child = child;
+        // ⚠️ spawn error 兜底（2026-08-23 WSL 生产事故）：命令缺失（wine 未安装等）
+        // 时 Node 异步 emit 'error'，不监听 = uncaughtException 崩掉整个 koishi。
+        // launch 工厂（launcher）已预检 + 内部监听防崩溃，这里再转发 onError 走
+        // 友好错误流程（[W] 驱动错误 + offline），并置 spawnFailed 防 exit 双处理。
+        child.once("error", (err) => {
+            this.spawnFailed = true;
+            this.handleSpawnError(err);
+        });
         // 子进程退出（崩溃/正常/被 kill）→ 统一处理（stop 流程除外）
         child.once("exit", (code, signal) => {
+            // spawn error 已处理（ENOENT 无 exit 事件，但防双触发）
+            if (this.spawnFailed) {
+                return;
+            }
             this.handleChildExit(code, signal, "crash");
         });
 
