@@ -10,7 +10,7 @@
  */
 import { parseChannelId } from "./channel.js";
 import { toCanonicalElements } from "./elements.js";
-import { ensureVoiceSilk } from "./media.js";
+import { ensureVoiceSilk, materializeDataUrlImages } from "./media.js";
 import type { MessageListResponse, NapukettoInternalOptions } from "./types.js";
 
 /** koishi bot.internal 封装（动作方法签名对齐 koishi Internal 惯例）。 */
@@ -32,13 +32,18 @@ export class NapukettoInternal {
         // 语音段统一转 silk（QQ 语音协议；2026-08-23 修复：非 silk 音频原样
         // 上传 QQ 播放器无法解码——线上实证语音发送成功但收件人无法播放）
         elements = await ensureVoiceSilk(elements);
-        const result = await this.options.request("msg.sendMessage", {
-            chatType: peer.chatType,
-            peerUin: peer.peerUin,
-            elements,
-        });
-        const msgId = (result as { msgId?: string } | null | undefined)?.msgId;
-        return msgId === undefined || msgId === "" ? [] : [msgId];
+        const materialized = await materializeDataUrlImages(elements);
+        try {
+            const result = await this.options.request("msg.sendMessage", {
+                chatType: peer.chatType,
+                peerUin: peer.peerUin,
+                elements: materialized.elements,
+            });
+            const msgId = (result as { msgId?: string } | null | undefined)?.msgId;
+            return msgId === undefined || msgId === "" ? [] : [msgId];
+        } finally {
+            await materialized.cleanup();
+        }
     }
 
     /** 撤回消息（messageId → msg.recallMessage）。 */

@@ -7,11 +7,11 @@
  * - 转码失败 → 回落原路径（kernel 发送兜底，不阻断）
  */
 
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ensureSilk, ensureVoiceSilk } from "../media.js";
+import { ensureSilk, ensureVoiceSilk, materializeDataUrlImages } from "../media.js";
 
 const { encodePcmToSilkMock } = vi.hoisted(() => ({ encodePcmToSilkMock: vi.fn() }));
 vi.mock("@napuketto/media", () => ({ encodePcmToSilk: encodePcmToSilkMock }));
@@ -63,5 +63,20 @@ describe("ensureSilk", () => {
 
         expect(out[0]).toEqual({ type: "text", text: "hi" });
         expect(out[1]).toEqual({ type: "voice", path: join(dir, "voice.silk") });
+    });
+});
+
+describe("materializeDataUrlImages", () => {
+    it("将 Base64 图片 data URL 写入临时文件并在清理后删除", async () => {
+        const source = "data:image/jpeg;base64,/9j/AA==";
+        const materialized = await materializeDataUrlImages([{ type: "image", path: source }]);
+        const path = (materialized.elements[0] as { path: string }).path;
+
+        expect(path).not.toBe(source);
+        expect(path).toMatch(/\.jpg$/);
+        expect(readFileSync(path)).toEqual(Buffer.from([0xff, 0xd8, 0xff, 0x00]));
+
+        await materialized.cleanup();
+        expect(() => readFileSync(path)).toThrow();
     });
 });

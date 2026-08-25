@@ -522,6 +522,12 @@ URL 语义解析图片路径，透传 `C:\...` 反斜杠路径读不到文件，
 failed`（现象：发送方日志 `已缓存海报图片` 成功但 `msg.sendMessage` 失败）。正斜杠
 路径无此问题（Chromium/Electron 内部按 URL 处理路径）。
 
+**图片 data URL 物化（2026-08-25 修复）**：Koishi 控制台二维码或其他上游可能把图片
+以 `data:image/...;base64,...` 形式传入。动作桥在发 IPC 前将其解码到系统临时目录，
+把临时文件路径放入 canonical `image`，请求完成（成功或失败）后删除临时目录；因此
+kernel/`wrapper.node` 始终收到可读取的本地文件路径，不会把整段 Base64 当作文件名。
+支持 Base64 与百分号编码的图片 data URL。
+
 **语音 silk 转码（2026-08-23 线上修复）**：`audio` → canonical `voice` 后、发 IPC
 `msg.sendMessage` 前，统一经 `actions/media.ts` 的 `ensureVoiceSilk` 把语音转成
 **silk v3**（QQ 语音协议格式）。背景：此前 koishi 路径不做转码，ogg/mp3 等非 silk
