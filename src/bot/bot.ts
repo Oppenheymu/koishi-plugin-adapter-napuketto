@@ -24,7 +24,11 @@ import { type LogLevel, type NapukettoBotConfig, napukettoConfigSchema } from ".
 import { BOT_STATUS, PRIVATE_PREFIX } from "../constants.js";
 import { NapukettoDatabase } from "../database/index.js";
 import { NapukettoDriver } from "../driver/index.js";
-import type { NapukettoEventBridge, NapukettoSessionFields } from "../events/index.js";
+import type {
+    NapukettoEventBridge,
+    NapukettoSessionFields,
+    Ob11EventPayload,
+} from "../events/index.js";
 import type { NapukettoIpcClient } from "../ipc/index.js";
 import type { NapukettoLoginState } from "../login/index.js";
 import { buildLaunch } from "./launch.js";
@@ -219,6 +223,15 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
     private syncUser(partial: { uin?: string | undefined; nick?: string | undefined }): void {
         this.user ??= {} as Universal.User;
         Object.assign(this.user, toUserFields(partial));
+    }
+
+    /**
+     * 订阅原始 OB11 事件（design.md §5.14）：子进程 OB11 动作桥透出的
+     * OneBot 11 格式事件（post_type = message/notice/request/meta_event），
+     * 不经 koishi session 翻译。ob11Actions=false 或子进程降级时无事件到来。
+     */
+    onOb11(listener: (event: Ob11EventPayload) => void): () => void {
+        return this.bridge.onOb11(listener);
     }
 
     /** 好友列表（kernel Friend { uin, nickname } → Universal.Friend）。 */

@@ -79,4 +79,37 @@ describe("resolveLaunchOptions", () => {
         expect(options.cwd.replaceAll("\\", "/")).toBe("C:/data");
         expect(options.cfgDir.replaceAll("\\", "/")).toBe("C:/data/123456789");
     });
+
+    it("OB11 动作桥入口：缺省解析依赖（ob11Actions 默认开）", async () => {
+        const options = await resolveLaunchOptions(makeConfig(), { resolveQq: fakeResolveQq });
+        expect(options.adapterEntry).toBeTypeOf("string");
+        expect(options.adapterEntry).toContain("adapter");
+        expect(options.networkEntry).toBeTypeOf("string");
+        expect(options.networkEntry).toContain("network");
+    });
+
+    it("OB11 动作桥入口：ob11Actions=false 时不解析（子进程纯 kernel 动作面）", async () => {
+        const options = await resolveLaunchOptions(
+            makeConfig({
+                ob11Actions: false,
+                adapterEntry: "C:/adapter/index.mjs",
+                networkEntry: "C:/network/index.mjs",
+            }),
+            { resolveQq: fakeResolveQq },
+        );
+        expect(options.adapterEntry).toBeUndefined();
+        expect(options.networkEntry).toBeUndefined();
+    });
+
+    it("OB11 动作桥入口：override 优先", async () => {
+        const options = await resolveLaunchOptions(
+            makeConfig({
+                adapterEntry: "C:/custom/adapter/index.mjs",
+                networkEntry: "C:/custom/network/index.mjs",
+            }),
+            { resolveQq: fakeResolveQq },
+        );
+        expect(options.adapterEntry).toBe("C:/custom/adapter/index.mjs");
+        expect(options.networkEntry).toBe("C:/custom/network/index.mjs");
+    });
 });

@@ -38,8 +38,22 @@ export interface EventBridgeOptions {
     platform?: string;
 }
 
+/** 原始 OB11 事件（宽松结构：post_type 定大类，其余字段按 OneBot 11 规范按需断言）。 */
+export interface Ob11EventPayload {
+    post_type: string;
+    time?: number;
+    self_id?: number;
+    [key: string]: unknown;
+}
+
 /** 事件桥（driver 事件源 → dispatch）。 */
 export interface EventBridge {
     /** 处理一条 kernel 事件（apply() 层作为 DriverEvents.onEvent 注入）。 */
     handle(payload: IpcEventPayload): void;
+    /**
+     * 订阅原始 OB11 事件（service="ob11"，design.md §5.14）。
+     * 子进程 OB11 动作桥未装配（ob11Actions=false / 降级）时不会有事件到来。
+     * 返回退订函数。
+     */
+    onOb11(listener: (event: Ob11EventPayload) => void): () => void;
 }

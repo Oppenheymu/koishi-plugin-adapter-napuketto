@@ -17,7 +17,17 @@ import type { MessageListResponse, NapukettoInternalOptions } from "./types.js";
 export class NapukettoInternal {
     constructor(private readonly options: NapukettoInternalOptions) {}
 
-    /** 统一动作调用（napcat internal._request 同构；IPC 动作请求）。 */
+    /**
+     * 统一动作调用（napcat internal._request 同构；IPC 动作请求）。
+     *
+     * 两个动作面（design.md §5.14）：
+     * - kernel 动作（点分命名）：`msg.sendMessage` 等，返回 kernel API 原始值；
+     * - OB11 动作（snake_case，2026-08-27 起）：`send_like` / `set_group_ban` /
+     *   `get_group_msg_history` 等全部 79 个（含别名变体），参数与 OneBot 11
+     *   规范一致，返回 OB11 标准信封 `{ status, retcode, data, message }`
+     *   （retcode=0 / status="ok" 为成功，业务数据在 data）——例：
+     *   `const res = await internal._request("send_like", { user_id, times })`。
+     */
     _request(action: string, params?: Record<string, unknown>): Promise<unknown> {
         return this.options.request(action, params);
     }

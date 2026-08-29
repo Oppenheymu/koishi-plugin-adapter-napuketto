@@ -40,8 +40,18 @@ export interface NapukettoBotConfig {
     kernelEntry?: string;
     /** 自建宿主入口覆盖（高级项；缺省 loader 包内 dist/host/self-host.cjs）。 */
     selfHostEntry?: string;
+    /** OB11 动作桥入口覆盖（高级项；缺省按 dependencies 自动解析，design.md §5.14）。 */
+    adapterEntry?: string;
+    /** network 入口覆盖（高级项；与 adapterEntry 配对，EventBroadcaster 用）。 */
+    networkEntry?: string;
     /** 心跳超时（毫秒，driver 默认 45s）。 */
     heartbeatTimeoutMs?: number;
+    /**
+     * OB11 动作桥（默认 true）：子进程整表挂载 @napuketto/adapter 的 OneBot 11
+     * 动作容器（79 动作 + ob11 事件透出，零网络传输；design.md §5.14）。
+     * 关闭 = 只保留 kernel 点分动作面（子进程也不需要 adapter/network 依赖）。
+     */
+    ob11Actions?: boolean;
     /** 日志等级（默认 "debug"：事件桥/消息详细日志；"info" 只留消息与警告，"error" 只报错）。 */
     logLevel?: LogLevel;
     /** 子进程重启策略。 */
@@ -62,9 +72,22 @@ export const napukettoConfigSchema: Schema<NapukettoBotConfig> = Schema.object({
     selfHostEntry: Schema.string().description(
         "自建宿主入口路径覆盖（高级项；缺省 loader 包内默认）",
     ),
+    adapterEntry: Schema.string().description(
+        "OB11 动作桥 adapter 入口覆盖（高级项；缺省按依赖自动解析）",
+    ),
+    networkEntry: Schema.string().description(
+        "OB11 动作桥 network 入口覆盖（高级项；缺省按依赖自动解析）",
+    ),
     heartbeatTimeoutMs: Schema.number()
         .description("子进程心跳超时（毫秒，默认 45000）")
         .default(45_000),
+    ob11Actions: Schema.boolean()
+        .description(
+            "OB11 动作桥（默认开）：子进程挂载全部 OneBot 11 动作" +
+                "（send_like / set_group_ban 等 79 个，经 bot.internal._request 调用）" +
+                "并透出 ob11 原始事件；关闭则只保留 kernel 动作面",
+        )
+        .default(true),
     logLevel: Schema.union([
         Schema.const("debug" as const),
         Schema.const("info" as const),

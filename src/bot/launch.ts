@@ -62,6 +62,9 @@ export interface ResolvedLaunch {
     qq: QqInstallInfo;
     kernelEntry: string;
     selfHostEntry?: string;
+    /** OB11 动作桥入口（design.md §5.14；ob11Actions=false 或解析失败时缺省）。 */
+    adapterEntry?: string;
+    networkEntry?: string;
     cfgDir: string;
     cwd: string;
     configPath: string;
@@ -118,10 +121,27 @@ export async function resolveLaunchOptions(
     });
     const cfgDir = join(dataRoot, config.selfId);
     const stubDir = config.stubDir ?? defaultStubDir();
+    // OB11 动作桥入口（§5.14）：ob11Actions !== false 时解析 adapter/network
+    // 磁盘入口传给子进程（launcher 透传 NAPUTO_ADAPTER_ENTRY/NAPUTO_NETWORK_ENTRY，
+    // loader IPC 分支检测到即装配）。解析失败（依赖未装/损坏）fail-soft 降级为
+    // 纯 kernel 动作面——不阻断启动，老版本行为兜底。
+    let adapterEntry: string | undefined;
+    let networkEntry: string | undefined;
+    if (config.ob11Actions !== false) {
+        try {
+            adapterEntry = resolveEntry("@napuketto/adapter", config.adapterEntry);
+            networkEntry = resolveEntry("@napuketto/network", config.networkEntry);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            deps.onStage?.(`OB11 动作桥不可用（降级纯 kernel 动作面）: ${message}`);
+        }
+    }
     return {
         qq,
         kernelEntry: resolveEntry("@napuketto/kernel", config.kernelEntry),
         ...(config.selfHostEntry !== undefined ? { selfHostEntry: config.selfHostEntry } : {}),
+        ...(adapterEntry !== undefined ? { adapterEntry } : {}),
+        ...(networkEntry !== undefined ? { networkEntry } : {}),
         cfgDir,
         cwd: dataRoot,
         configPath: resolveConfigPath({ dataRoot }),
@@ -152,6 +172,10 @@ export function buildLaunch(config: NapukettoBotConfig, host: LaunchHost = {}): 
             kernelEntry: options.kernelEntry,
             ...(options.selfHostEntry !== undefined
                 ? { selfHostEntry: options.selfHostEntry }
+                : {}),
+            ...(options.adapterEntry !== undefined ? { adapterEntry: options.adapterEntry } : {}),
+            ...(options.networkEntry !== undefined
+                ? { networkEntry: options.networkEntry }
                 : {}),
             cfgDir: options.cfgDir,
             cwd: options.cwd,

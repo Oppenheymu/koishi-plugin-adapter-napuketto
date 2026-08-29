@@ -16,14 +16,16 @@
 - **不做**：不直接触碰 `wrapper.node` / session / 原生 listener（kernel 唯一原生交互层）；
   不做协议语义翻译（adapter 包负责）；不做媒体转码（media 包负责）。
 
-依赖方向（遵循主仓库硬约束）：
+依赖方向（遵循主仓库硬约束；2026-08-27 起 adapter/network 成为真实运行时依赖，§5.14）：
 
 ```
 koishi-plugin-adapter-napuketto
   ├─ koishi（peer，宿主提供）
   ├─ @napuketto/kernel（装配 + 登录 + 事件通道 + API）
-  ├─ @napuketto/adapter（协议语义：事件模型 / 动作注册表 / 数据翻译）
-  └─ @napuketto/loader（自建宿主引导：dlopen + stub + O3MiscService 激活）
+  ├─ @napuketto/loader（自建宿主引导：dlopen + stub + O3MiscService 激活）
+  ├─ @napuketto/media（语音 silk 转码）
+  ├─ @napuketto/adapter（协议语义：OB11 动作容器——子进程侧经 loader 动态 import 消费）
+  └─ @napuketto/network（EventBroadcaster——子进程侧经 loader 动态 import 消费）
 ```
 
 **关键决策（2026-08-08）**：嵌入走**子进程 IPC**（方案二），不在 koishi 进程内 dlopen。
@@ -167,10 +169,15 @@ apps/koishi-plugin-adapter-napuketto/
 
 - 源码 **ESM**（NodeNext + verbatimModuleSyntax，与主仓库一致，TS7.0 + ES2025）
 - 产物 **CJS bundle**（tsdown `format: ['cjs']`，koishi loader 用 `require()` 加载）
-- `@napuketto/*` 在 **devDependencies**，被 rolldown **bundle 进产物**——运行时只依赖
-  `koishi`（peer），**不要求用户装主仓库包**，跨仓库 `workspace:*` 失效问题绕开
+- **发布形态（2026-08-09 产品化修订）**：`@napuketto/kernel` / `@napuketto/loader`（及
+  `@napuketto/media`）为 **dependencies（真实安装，不 bundle）**——子进程要的是磁盘
+  真实文件（self-host.cjs / stub QQNT.dll / kernel 入口），bundle 后资产丢失；
+  **2026-08-27 起 `@napuketto/adapter` / `@napuketto/network` 同为 dependencies**——
+  子进程侧 OB11 动作桥需要磁盘上的 adapter 子路径入口（§5.14），插件自身编译期
+  仍零 import（类型面用本包宽松结构描述，不绑 adapter d.mts）
 - 开发态：`exports.development` 条件（NODE_ENV=development 直载 `src/index.ts`，
-  esbuild-register 转译 + Node24 `require(esm)`），改源码即时生效
+  esbuild-register 转译 + Node24 `require(esm)`），改源码即时生效；配合主仓库
+  `linkWorkspacePackages: true`，`~0.0.x` 版本范围在 workspace 内解析到本地源码
 
 ### 5.2 子进程 IPC（核心决策）
 
@@ -837,6 +844,58 @@ check-then-act，未命中走 `createUser` → `create('binding')` 撞 `(pid, pl
 
 **接线**：`bot.ts` 构造时装配（`this.database`），`dispatchSession` 变 async——先
 `await ensureChannel` 再 `await ensureUser` 最后 dispatch。
+
+### 5.14 OB11 动作桥（IPC 模式整表挂载，2026-08-27）
+
+**动机**：IPC 模式此前只挂 7 个 kernel 动作（`msg.sendMessage` 等点分域），koishi
+生态里大量 OneBot 11 生态代码（`send_like` / `set_group_ban` / `get_group_msg_history`
+等 79 个 snake_case 动作，含别名变体）够不着。OB11 动作容器已在 `@napuketto/adapter`
+完整实现——IPC 模式把它**整表挂载**进共享 IPC 动作表，零重复实现。
+
+**机制**（子进程侧，loader `host/ipc/ipc-ob11.ts`，装配于 `attachIpcServices` 之后）：
+
+- 插件在 `resolveLaunchOptions` 解析 `@napuketto/adapter` / `@napuketto/network`
+  磁盘入口（`resolveEntry`，同 kernelEntry 模式），经 launcher 既有的
+  `adapterEntry` / `networkEntry` 选项透传 env（`NAPUTO_ADAPTER_ENTRY` /
+  `NAPUTO_NETWORK_ENTRY`）。配置 `ob11Actions: false` 关闭（默认开）。
+- loader IPC 分支检测到两个 env 后：动态 import adapter 的 `onebot11` / `core`
+  子路径 + network 入口（assemble-protocols.ts 同款「按注入路径动态 import」，
+  loader 包零静态依赖、不违反依赖方向），实例化 `NapukettoOneBot11Adapter`
+  （九个 kernel api + self + groupCache + msgChannel，`ProtocolConfig` 用
+  `seed=parse({})` 缺省段，不读不写任何配置文件），**只调 `subscribeOnly()`**
+  （接收链路：`Msg/onRecvMsg` 维护 messageUnique + 灰色通知翻译），**不装配任何
+  网络传输 / 心跳 / 生命周期广播**（无 HTTP/WS 端口）。
+- 全部 OB11 动作名平铺合并进 IPC 动作表：handler = `(params) => act.handle(params)`，
+  返回 OB11 标准信封 `{ status, retcode, data, message }`（zod 校验 + KernelError
+  → retcode 映射在 `BaseAction.handle` 内完成，永不抛）。**动作名空间天然不冲突**：
+  kernel 动作是点分命名（`msg.sendMessage`），OB11 是 snake_case（`send_like`）。
+- OB11 事件经 broadcaster 挂一个仅 `send` 的桥适配器 → 现有 event 通道透出：
+  `{ service: "ob11", name: <post_type>, args: [<完整 OB11 事件对象>] }`。
+- **fail-soft**：入口缺失 / import 失败 → log 降级为纯 kernel 动作面，登录链路不阻断。
+
+**调用方式**（koishi 侧，`bot.internal._request` 通用通道直通）：
+
+```ts
+// 信封语义与 OB11 HTTP/WS 完全一致
+const res = await bot.internal._request("send_like", { user_id: 123456, times: 10 });
+// res: { status: "ok", retcode: 0, data: null, message: "" }
+const info = await bot.internal._request("get_login_info");
+// info.data: { user_id, nickname }
+```
+
+**事件订阅口**（原始 OB11 事件，poke 类通知未来可用）：
+
+```ts
+bot.onOb11Event((event) => {
+  // event.post_type: "message" | "notice" | "request" | "meta_event"
+});
+```
+
+**已知缺口（TODO，保持原样）**：`toOb11NoticeEvent` 对 poke（戳一戳）子类型返回
+null——kernel 侧探测另起对话规划；戳一戳发送/接收不在本批范围。
+
+**明确不做**：Satori 动作面对接、koishi onebot 风格 `session.onebot.*` 驼峰兼容糖
+（生态库用 `_request` 蛇形名直达，语义无损）。
 
 ## 6. 实现顺序（一个模块一个模块，每步跑 `pnpm check`）
 

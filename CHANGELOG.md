@@ -1,5 +1,11 @@
 # koishi-plugin-adapter-napuketto
 
+## 0.0.26
+
+### Patch Changes
+
+- 9c39163: 修复 Koishi 发送 Base64 图片时被当作本地文件路径的问题。
+
 ## 0.0.25
 
 ### Patch Changes

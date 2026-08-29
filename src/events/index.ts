@@ -8,4 +8,5 @@ export type {
     EventBridge,
     EventBridgeOptions,
     NapukettoSessionFields,
+    Ob11EventPayload,
 } from "./types.js";

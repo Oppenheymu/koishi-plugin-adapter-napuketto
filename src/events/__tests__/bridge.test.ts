@@ -153,3 +153,55 @@ describe("NapukettoEventBridge", () => {
         });
     });
 });
+
+describe("NapukettoEventBridge（OB11 原始事件，design.md §5.14）", () => {
+    function makeBridge() {
+        const dispatch = vi.fn();
+        const bridge = new NapukettoEventBridge({ dispatch, selfId: () => "1", h: mockH() });
+        return { bridge, dispatch };
+    }
+
+    it("service=ob11 → args[0] 完整事件分发到订阅者（不经 session dispatch）", () => {
+        const { bridge, dispatch } = makeBridge();
+        const listener = vi.fn();
+        bridge.onOb11(listener);
+        bridge.handle({
+            service: "ob11",
+            name: "notice",
+            args: [{ post_type: "notice", notice_type: "notify", sub_type: "poke" }],
+        });
+        expect(listener).toHaveBeenCalledWith({
+            post_type: "notice",
+            notice_type: "notify",
+            sub_type: "poke",
+        });
+        expect(dispatch).not.toHaveBeenCalled();
+    });
+
+    it("退订后不再收到；单订阅者异常不中断其他订阅者", () => {
+        const { bridge } = makeBridge();
+        const a = vi.fn(() => {
+            throw new Error("订阅者异常");
+        });
+        const b = vi.fn();
+        const off = bridge.onOb11(a);
+        bridge.onOb11(b);
+        bridge.handle({ service: "ob11", name: "message", args: [{ post_type: "message" }] });
+        expect(a).toHaveBeenCalledTimes(1);
+        expect(b).toHaveBeenCalledTimes(1);
+        off();
+        bridge.handle({ service: "ob11", name: "message", args: [{ post_type: "message" }] });
+        expect(a).toHaveBeenCalledTimes(1);
+        expect(b).toHaveBeenCalledTimes(2);
+    });
+
+    it("事件结构异常（缺 post_type / 非对象）静默丢弃", () => {
+        const { bridge } = makeBridge();
+        const listener = vi.fn();
+        bridge.onOb11(listener);
+        bridge.handle({ service: "ob11", name: "unknown", args: [{ foo: 1 }] });
+        bridge.handle({ service: "ob11", name: "unknown", args: ["string"] });
+        bridge.handle({ service: "ob11", name: "unknown", args: [] });
+        expect(listener).not.toHaveBeenCalled();
+    });
+});
