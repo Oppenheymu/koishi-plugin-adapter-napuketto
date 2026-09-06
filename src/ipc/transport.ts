@@ -7,6 +7,7 @@
 import type { ChildProcess } from "node:child_process";
 import { createInterface, type Interface } from "node:readline";
 import { KernelError } from "@napuketto/kernel";
+import { isNativeNoiseLine } from "@napuketto/loader";
 import { SubscriberSet } from "./subscribers.js";
 
 /** JSON 行传输接口。 */
@@ -74,14 +75,23 @@ export class ChildProcessIpcTransport extends BaseLineTransport {
         }
         this.readline = createInterface({ input: child.stdout, crlfDelay: Infinity });
         this.readline.on("line", (line) => {
+            // wrapper 原生噪音整行静默丢弃：噪音 ≠ 撕裂，不进 onJunkLine
+            // （那是留给协议行被撕裂/污染的诊断通道，判定见 loader native-noise）
+            if (isNativeNoiseLine(line)) {
+                return;
+            }
             this.dispatchLine(line);
         });
         // 子进程 stderr 透传（2026-08-14 WSL 生产排查）：wine/node 启动失败的原始错误
         // 信息走 stderr，此前被 stdio pipe 吞掉，子进程 code=1 退出时无从诊断。
-        // 逐行透传到父进程 stderr（原始输出，不加协议语义，保留 wine 报错原文）。
+        // 逐行透传到父进程 stderr（原始输出，不加协议语义，保留 wine 报错原文）；
+        // 原生噪音行同样过滤（与 cli forwardFiltered 双流过滤一致）。
         if (child.stderr !== null) {
             const stderrLines = createInterface({ input: child.stderr, crlfDelay: Infinity });
             stderrLines.on("line", (line) => {
+                if (isNativeNoiseLine(line)) {
+                    return;
+                }
                 process.stderr.write(`[napuketto 子进程] ${line}\n`);
             });
         }

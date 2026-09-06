@@ -1,12 +1,18 @@
 /**
- * transport.test.ts：BaseLineTransport 单测。
+ * transport.test.ts：传输层单测。
  *
- * 用最小子类 TestTransport 覆盖基类职责：dispatchLine 分发、
+ * BaseLineTransport 用最小子类 TestTransport 覆盖基类职责：dispatchLine 分发、
  * onLine/onClose 订阅与退订、close 幂等、closed 状态屏蔽、
  * onClosed 钩子（一次）。write 属子类职责（抽象方法），不在基类测试范围。
+ *
+ * ChildProcessIpcTransport 用 FakeChildProcess（PassThrough stdio）覆盖：
+ * 原生噪音过滤（stdout 整行丢弃——噪音 ≠ 撕裂，不进 onLine 即不会触发
+ * client 层 onJunkLine 诊断通道；stderr 透传同样过滤）、close 接线、stdio 守卫。
  */
-import { describe, expect, it } from "vitest";
-import { BaseLineTransport } from "../transport.js";
+import type { ChildProcess } from "node:child_process";
+import { PassThrough, Writable } from "node:stream";
+import { describe, expect, it, vi } from "vitest";
+import { BaseLineTransport, ChildProcessIpcTransport } from "../transport.js";
 
 /** 最小测试子类：暴露 dispatchLine 钩子 + 记录 onClosed 调用。 */
 class TestTransport extends BaseLineTransport {
@@ -97,5 +103,90 @@ describe("BaseLineTransport", () => {
         transport.write("line1");
         transport.write("line2");
         expect(transport.written).toEqual(["line1", "line2"]);
+    });
+});
+
+/** 最小 fake ChildProcess：PassThrough stdout / 消音 stdin / 可选 stderr / close 注册表。 */
+class FakeChildProcess {
+    readonly stdout = new PassThrough();
+    readonly stdin = new Writable({
+        write(_chunk, _encoding, callback) {
+            callback();
+        },
+    });
+    readonly stderr: PassThrough | null;
+    private readonly closeHandlers: Array<() => void> = [];
+
+    constructor(options: { stderr?: boolean } = {}) {
+        this.stderr = options.stderr === true ? new PassThrough() : null;
+    }
+
+    once(event: "close", listener: () => void): this {
+        if (event === "close") {
+            this.closeHandlers.push(listener);
+        }
+        return this;
+    }
+
+    /** 测试辅助：模拟子进程退出（触发 close 订阅）。 */
+    emitClose(): void {
+        for (const handler of this.closeHandlers) {
+            handler();
+        }
+    }
+}
+
+/** 等待 readline 从流中收行（write 异步推进，两拍 setImmediate 收齐）。 */
+async function flushStreams(): Promise<void> {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+}
+
+describe("ChildProcessIpcTransport", () => {
+    it("stdio 未启用（stdout/stdin 为 null）抛 KernelError", () => {
+        const bare = { stdout: null, stdin: null } as unknown as ChildProcess;
+        expect(() => new ChildProcessIpcTransport(bare)).toThrow(
+            "子进程 stdio 未启用（需要 stdout/stdin pipe）",
+        );
+    });
+
+    it("stdout 协议行分发、原生噪音行静默丢弃（不进 onLine）", async () => {
+        const child = new FakeChildProcess();
+        const transport = new ChildProcessIpcTransport(child as unknown as ChildProcess);
+        const received: string[] = [];
+        transport.onLine((line) => {
+            received.push(line);
+        });
+        child.stdout.write('{"v":1,"type":"ping"}\n');
+        child.stdout.write("<MMKV> close finish, remains = 0\n");
+        child.stdout.write('{"v":1,"type":"pong"}\n');
+        child.stdout.write("loaded [mmkv.default] with 0 key-values\n");
+        await flushStreams();
+        expect(received).toEqual(['{"v":1,"type":"ping"}', '{"v":1,"type":"pong"}']);
+        transport.close();
+    });
+
+    it("stderr 透传：原生噪音行过滤、其余带前缀透传", async () => {
+        const child = new FakeChildProcess({ stderr: true });
+        const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+        const transport = new ChildProcessIpcTransport(child as unknown as ChildProcess);
+        child.stderr?.write("wine: could not load qq.exe\n");
+        child.stderr?.write("<MMKV> close finish, remains = 0\n");
+        await flushStreams();
+        expect(stderrSpy).toHaveBeenCalledTimes(1);
+        expect(stderrSpy).toHaveBeenCalledWith("[napuketto 子进程] wine: could not load qq.exe\n");
+        stderrSpy.mockRestore();
+        transport.close();
+    });
+
+    it("子进程 close 事件 → 通道关闭（onClose 通知一次）", () => {
+        const child = new FakeChildProcess();
+        const transport = new ChildProcessIpcTransport(child as unknown as ChildProcess);
+        let closed = 0;
+        transport.onClose(() => {
+            closed += 1;
+        });
+        child.emitClose();
+        expect(closed).toBe(1);
     });
 });
