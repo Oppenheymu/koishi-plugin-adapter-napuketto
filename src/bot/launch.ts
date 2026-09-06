@@ -174,9 +174,7 @@ export function buildLaunch(config: NapukettoBotConfig, host: LaunchHost = {}): 
                 ? { selfHostEntry: options.selfHostEntry }
                 : {}),
             ...(options.adapterEntry !== undefined ? { adapterEntry: options.adapterEntry } : {}),
-            ...(options.networkEntry !== undefined
-                ? { networkEntry: options.networkEntry }
-                : {}),
+            ...(options.networkEntry !== undefined ? { networkEntry: options.networkEntry } : {}),
             cfgDir: options.cfgDir,
             cwd: options.cwd,
             configPath: options.configPath,
