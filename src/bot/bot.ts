@@ -297,6 +297,14 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
             ...(this.config.heartbeatTimeoutMs !== undefined
                 ? { heartbeatTimeoutMs: this.config.heartbeatTimeoutMs }
                 : {}),
+            // IPC 脏行诊断（2026-09-06）：子进程 stdout 被并发输出撕裂/原生 printf
+            // 污染时留痕，不再静默丢弃（撕裂的可能是 ready 等关键 status）
+            onJunkLine: (line) => {
+                this.logger.debug(
+                    "[napuketto] IPC 收到无法解析的行（可能被并发输出撕裂）: %s",
+                    line.slice(0, 200),
+                );
+            },
         });
         this.driver = driver;
     }

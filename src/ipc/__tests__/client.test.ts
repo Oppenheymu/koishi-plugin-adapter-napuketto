@@ -223,6 +223,25 @@ describe("NapukettoIpcClient 事件分发", () => {
         client.close();
     });
 
+    it("无法解析的行 → onJunkLine 回调且不影响后续消息", () => {
+        const pair = new MemoryLinePair();
+        const junk: string[] = [];
+        const client = new NapukettoIpcClient(pair, {
+            onJunkLine: (line) => junk.push(line),
+        });
+        const phases: string[] = [];
+        client.on("status", (message) => phases.push(message.payload.phase));
+
+        const torn = "[00:13:40.523] INFO (kernel/4242): 撕裂的日志行\n";
+        pair.peer.write(torn);
+        pair.peer.write(
+            encodeIpcMessage({ v: IPC_VERSION, type: "status", payload: { phase: "booting" } }),
+        );
+        expect(junk).toEqual([torn]);
+        expect(phases).toEqual(["booting"]);
+        client.close();
+    });
+
     it("status / login / qr 均能派发", () => {
         const pair = new MemoryLinePair();
         const client = new NapukettoIpcClient(pair);

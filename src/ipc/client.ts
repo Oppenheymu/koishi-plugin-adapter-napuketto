@@ -24,6 +24,9 @@ import type { IpcLineTransport } from "./transport.js";
 interface IpcClientOptions {
     /** 动作请求超时（毫秒，默认 60s）。 */
     requestTimeoutMs?: number;
+    /** 无法解析的行回调（诊断：stdout 被并发输出撕裂/原生 printf 污染时留痕，
+     * 不再静默丢弃——调用方接 logger，见 driver 的 onJunkLine 接线）。 */
+    onJunkLine?: (line: string) => void;
 }
 
 /** 心跳采样：子进程发 ping → 自动回 pong。 */
@@ -131,7 +134,9 @@ export class NapukettoIpcClient {
     private handleLine(line: string): void {
         const message = decodeIpcMessage(line);
         if (message === null) {
-            return; // 非法行：忽略（driver 层可记日志）
+            // 非法行：不静默丢弃（撕裂/污染留痕，调用方可接日志）
+            this.options.onJunkLine?.(line);
+            return;
         }
         this.lastSeenAt = Date.now();
         switch (message.type) {

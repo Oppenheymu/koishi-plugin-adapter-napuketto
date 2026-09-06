@@ -61,6 +61,8 @@ export interface DriverOptions {
     restart?: RestartPolicy;
     /** 心跳超时（毫秒，默认 45s）。 */
     heartbeatTimeoutMs?: number;
+    /** IPC 通道脏行回调（子进程 stdout 被并发输出撕裂/污染时的诊断留痕，接 logger）。 */
+    onJunkLine?: (line: string) => void;
 }
 
 /** 传输工厂（默认 ChildProcessIpcTransport；测试注入内存双端）。 */

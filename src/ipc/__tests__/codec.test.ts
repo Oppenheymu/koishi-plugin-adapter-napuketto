@@ -26,4 +26,17 @@ describe("codec", () => {
         expect(decodeIpcMessage('{"v":999,"type":"ping"}')).toBeNull();
         expect(decodeIpcMessage("[1,2,3]")).toBeNull();
     });
+
+    it("decode control status 查询指令（状态重同步，2026-09-06）", () => {
+        const line = encodeIpcMessage({
+            v: IPC_VERSION,
+            type: "control",
+            payload: { command: "status" },
+        });
+        expect(decodeIpcMessage(line)).toEqual({
+            v: IPC_VERSION,
+            type: "control",
+            payload: { command: "status" },
+        });
+    });
 });

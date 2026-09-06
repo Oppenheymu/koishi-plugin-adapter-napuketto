@@ -81,7 +81,10 @@ export interface DriverHarness {
 /** 创建夹具（restart 默认 maxRetries=3 / backoffMs=100 / factor=2）。 */
 export function createHarness(
     events: DriverEvents = {},
-    options: { restart?: { maxRetries?: number; backoffMs?: number; backoffFactor?: number } } = {},
+    options: {
+        restart?: { maxRetries?: number; backoffMs?: number; backoffFactor?: number };
+        onJunkLine?: (line: string) => void;
+    } = {},
 ): DriverHarness {
     const spawns: FakeChild[] = [];
     const peers: MemoryLinePair[] = [];
@@ -99,6 +102,7 @@ export function createHarness(
         events,
         restart: { maxRetries: 3, backoffMs: 100, backoffFactor: 2, ...options.restart },
         heartbeatTimeoutMs: 45_000,
+        ...(options.onJunkLine !== undefined ? { onJunkLine: options.onJunkLine } : {}),
     });
     return {
         driver,

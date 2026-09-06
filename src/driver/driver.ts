@@ -6,6 +6,12 @@
  *
  * 心跳监控：spawn 后立即开始（兜 dlopen/登录卡死挂起），client.seenAt 超过
  * heartbeatTimeoutMs 判定失联 → kill + 重启。
+ *
+ * 状态重同步（2026-09-06「能收不能发」事故）：status 消息（尤其 ready）经子进程
+ * stdout 传输，可能被并发输出撕裂丢失（原生 printf 直写 fd 等 JS 层拦不住的
+ * 污染）。丢失后事件照常派发但发送请求因 clientRef 未就绪全数抛错。自愈：收到
+ * event 但状态机未 ready、或 booting 阶段定期（20s）→ 发 control status 查询，
+ * 子进程重播最近一条 status（幂等守卫防重复 onReady）。
  */
 import type { ChildProcess } from "node:child_process";
 import {
@@ -34,6 +40,12 @@ const HEALTH_CHECK_INTERVAL_MS = 1_000;
 /** 优雅退出等待超时（毫秒）。 */
 const STOP_TIMEOUT_MS = 5_000;
 
+/** booting 阶段状态重查间隔（毫秒）：status 丢失后定期向子进程重同步。 */
+const BOOT_STATUS_QUERY_INTERVAL_MS = 20_000;
+
+/** 状态重查节流下限（毫秒）：事件风暴下避免 control status 刷屏。 */
+const STATUS_QUERY_MIN_INTERVAL_MS = 5_000;
+
 /** 默认重启策略。 */
 const DEFAULT_RESTART: Required<RestartPolicy> = {
     maxRetries: 3,
@@ -53,6 +65,7 @@ export class NapukettoDriver {
     private readonly createTransport: TransportFactory;
     private readonly restart: Required<RestartPolicy>;
     private readonly heartbeatTimeoutMs: number;
+    private readonly onJunkLine: ((line: string) => void) | undefined;
 
     private state: DriverState = "idle";
     private client: NapukettoIpcClient | null = null;
@@ -62,14 +75,19 @@ export class NapukettoDriver {
     private spawnAt = 0;
     /** spawn error 已处理（ENOENT 等）：伴随触发的 exit 事件跳过，防重复 onError/重启。 */
     private spawnFailed = false;
+    /** 最近一次状态重查时间（节流用）。 */
+    private lastStatusQueryAt = 0;
     private readonly heartbeat: HeartbeatMonitor;
     private restartTimer: NodeJS.Timeout | null = null;
     private stopTimer: NodeJS.Timeout | null = null;
+    /** booting 阶段状态重查定时器（离开 booting 即清）。 */
+    private bootQueryTimer: NodeJS.Timeout | null = null;
 
     constructor(options: DriverOptions) {
         this.events = options.events;
         this.launch = options.launch;
         this.createTransport = options.createTransport ?? defaultTransport;
+        this.onJunkLine = options.onJunkLine;
         this.restart = {
             maxRetries: options.restart?.maxRetries ?? DEFAULT_RESTART.maxRetries,
             backoffMs: options.restart?.backoffMs ?? DEFAULT_RESTART.backoffMs,
@@ -183,7 +201,11 @@ export class NapukettoDriver {
             this.handleSpawnError(err);
             return;
         }
-        const client = new NapukettoIpcClient(transport);
+        const client = new NapukettoIpcClient(
+            transport,
+            // exactOptionalPropertyTypes：可选回调条件展开，不显式赋 undefined
+            this.onJunkLine !== undefined ? { onJunkLine: this.onJunkLine } : {},
+        );
         this.client = client;
         this.subscribeClient(client);
 
@@ -204,6 +226,11 @@ export class NapukettoDriver {
             this.events.onQr?.(message.payload);
         });
         client.on("event", (message) => {
+            // 事件已到但状态机未 ready：ready 消息可能已被撕裂丢失，
+            // 主动查状态自愈（子进程重播最近 status，见 ipc-server control status）
+            if (this.state !== "ready") {
+                this.resyncStatus();
+            }
             this.events.onEvent?.(message.payload);
         });
         client.on("log", (message) => {
@@ -214,7 +241,13 @@ export class NapukettoDriver {
     private handleStatus(status: IpcStatusPayload): void {
         switch (status.phase) {
             case "ready":
-                if (this.state !== "stopping" && this.state !== "stopped") {
+                // 幂等守卫：control status 重播会重复送达 ready，已 ready 不再触发
+                // onReady（防 online/getLogin 等重复副作用）
+                if (
+                    this.state !== "ready" &&
+                    this.state !== "stopping" &&
+                    this.state !== "stopped"
+                ) {
                     this.restartCount = 0; // 就绪即健康，重置重启计数
                     this.setState("ready");
                     this.events.onReady?.();
@@ -294,5 +327,38 @@ export class NapukettoDriver {
 
     private setState(next: DriverState): void {
         this.state = next;
+        this.updateBootQueryTimer();
+    }
+
+    /**
+     * 状态重查（节流）：向子进程发 control status，子进程重播最近一条 status。
+     * 与心跳监控互补——心跳兜「全静默」（kill + 重启），重查兜「活着但关键
+     * status 丢失」（协议行被撕裂丢弃，事件/心跳照常）。
+     */
+    private resyncStatus(): void {
+        const now = Date.now();
+        if (now - this.lastStatusQueryAt < STATUS_QUERY_MIN_INTERVAL_MS) {
+            return;
+        }
+        this.lastStatusQueryAt = now;
+        this.client?.sendControl({ command: "status" });
+    }
+
+    /** booting 阶段定期状态重查（status 丢失自愈）；离开 booting 停表。 */
+    private updateBootQueryTimer(): void {
+        if (this.state === "booting") {
+            if (this.bootQueryTimer === null) {
+                this.bootQueryTimer = setInterval(() => {
+                    if (this.state === "booting") {
+                        this.resyncStatus();
+                    }
+                }, BOOT_STATUS_QUERY_INTERVAL_MS);
+            }
+            return;
+        }
+        if (this.bootQueryTimer !== null) {
+            clearInterval(this.bootQueryTimer);
+            this.bootQueryTimer = null;
+        }
     }
 }
