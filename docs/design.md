@@ -512,9 +512,9 @@ uid**——注入 groupApi.uinToUid）：
 |---|---|---|
 | `text`（children join） | `{ type: "text", text }` | |
 | `at`（attrs.id） | `{ type: "at", target }` | `id="all"` 原样 |
-| `img`（attrs.src） | `{ type: "image", path }` | **koishi 标准元素是 img**（兼容旧 `image` 写法）；本地路径；**http(s) URL 降级 text**（需下载后发送，后续轮次）；**file:// URL 先 `fileURLToPath` 再统一规范化**（见下） |
+| `img`（attrs.src） | `{ type: "image", path }` | **koishi 标准元素是 img**（兼容旧 `image` 写法）；本地路径；**http(s) URL 透传**（internal.sendMessage 的 `downloadRemoteMedia` 下载到临时文件后发送，失败回退占位文本 `[图片: url]` + warn，2026-09-08）；**file:// URL 先 `fileURLToPath` 再统一规范化**（见下） |
 | `face`（attrs.id） | `{ type: "face", id }` | |
-| `audio`（attrs.src） | `{ type: "voice", path }` | 本地路径；URL 降级 text |
+| `audio`（attrs.src） | `{ type: "voice", path }` | 本地路径；http(s) URL 同 img 策略（下载后发送，失败回退 `[语音: url]`） |
 | `quote`（attrs.id） | `{ type: "reply", messageId }` | |
 | 其他（p/br/video/file/…） | `{ type: "text", text: toString() }` | 保内容不丢 |
 

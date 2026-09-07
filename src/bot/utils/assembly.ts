@@ -150,6 +150,8 @@ export function createBridge(host: BridgeHost): NapukettoEventBridge {
 export interface InternalHost {
     /** 当前 IPC 客户端（null = 子进程未就绪，request 抛错）。 */
     getClient: () => NapukettoIpcClient | null;
+    /** 告警日志（远程媒体下载失败等；缺省静默）。 */
+    logger?: { warn(message: string): void };
 }
 
 /** 装配动作桥：koishi 动作 → IPC action（request 绑定 client 引用）。 */
@@ -162,5 +164,6 @@ export function createInternal(host: InternalHost): NapukettoInternal {
             }
             return client.request(action, params);
         },
+        ...(host.logger !== undefined ? { logger: host.logger } : {}),
     });
 }

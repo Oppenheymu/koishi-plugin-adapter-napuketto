@@ -6,9 +6,9 @@
  *  - text → { type: "text", text }（attrs.content 优先，children join 兜底）
  *  - br → { type: "text", text: "\n" }
  *  - at → { type: "at", target: attrs.id }（id="all" 原样）
- *  - img/image → { type: "image", path: attrs.src }（koishi 标准元素是 img；本地路径；URL 降级 text）
+ *  - img/image → { type: "image", path: attrs.src }（koishi 标准元素是 img；本地路径直接用；http(s) URL 透传——发送前下载，失败回退占位文本）
  *  - face → { type: "face", id: attrs.id }
- *  - audio → { type: "voice", path: attrs.src }（本地路径；URL 降级 text）
+ *  - audio → { type: "voice", path: attrs.src }（同 img 的 URL 策略）
  *  - quote → { type: "reply", messageId: attrs.id }
  *  - 其他 → 降级 { type: "text", text: toString() }（保内容不丢）
  * 字符串 content（koishi 允许 sendMessage(channelId, "纯文本")）→ 单 text 元素。
@@ -24,7 +24,7 @@ interface LooseElement {
     toString(): string;
 }
 
-/** http(s) URL 判断（远程资源需下载后发送，本轮降级 text）。 */
+/** http(s) URL 判断（远程资源透传，internal.sendMessage 下载后发送）。 */
 function isHttpUrl(value: string): boolean {
     return /^https?:\/\//i.test(value);
 }
@@ -71,11 +71,10 @@ function normalizeMediaPath(path: string): string {
     return path.replace(/\\/g, "/");
 }
 
-/** 媒体元素（img/image/audio）：src 空 → 原样文本；URL → 占位文本；本地路径 → canonical 媒体。 */
+/** 媒体元素（img/image/audio）：src 空 → 原样文本；本地路径/file:// → canonical 媒体；http(s) URL 透传（发送前下载）。 */
 function mediaElement(
     element: LooseElement,
     attrs: Record<string, unknown>,
-    label: "图片" | "语音",
     kind: "image" | "voice",
 ): CanonicalElement {
     const src = String(attrs["src"] ?? "");
@@ -89,7 +88,9 @@ function mediaElement(
         return kind === "image" ? { type: "image", path: local } : { type: "voice", path: local };
     }
     if (isHttpUrl(src)) {
-        return { type: "text", text: `[${label}: ${src}]` };
+        // 远程 URL 透传：internal.sendMessage 的 downloadRemoteMedia 下载到本地
+        // 临时文件后发送；下载失败回退占位文本（media.ts）
+        return kind === "image" ? { type: "image", path: src } : { type: "voice", path: src };
     }
     // 普通本地路径同样规范化（2026-08-09：redposter 实证 file:// 转路径后仍
     // rich media transfer failed——Windows 反斜杠路径透传给 NT 读不到，
@@ -116,14 +117,14 @@ const elementHandlers: Record<
             ? { type: "text", text: element.toString() }
             : { type: "at", target: id };
     },
-    img: (element, attrs) => mediaElement(element, attrs, "图片", "image"),
+    img: (element, attrs) => mediaElement(element, attrs, "image"),
     // koishi 标准图片元素是 img（h("img", ...)），兼容旧 image 写法
-    image: (element, attrs) => mediaElement(element, attrs, "图片", "image"),
+    image: (element, attrs) => mediaElement(element, attrs, "image"),
     face: (element, attrs) => {
         const id = takeId(attrs);
         return id === null ? { type: "text", text: element.toString() } : { type: "face", id };
     },
-    audio: (element, attrs) => mediaElement(element, attrs, "语音", "voice"),
+    audio: (element, attrs) => mediaElement(element, attrs, "voice"),
     quote: (element, attrs) => {
         const id = takeId(attrs);
         return id === null

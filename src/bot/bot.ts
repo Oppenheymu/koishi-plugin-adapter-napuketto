@@ -159,6 +159,12 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
         // 动作桥：request 绑定 clientRef（client null 时抛错，driver 就绪后可用）
         this.internal = createInternal({
             getClient: () => this.clientRef.current,
+            // 远程媒体下载失败等告警日志
+            logger: {
+                warn: (message: string) => {
+                    this.logger.warn("[napuketto] %s", message);
+                },
+            },
         });
     }
 

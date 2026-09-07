@@ -13,6 +13,8 @@ export type RequestFn = (action: string, params?: Record<string, unknown>) => Pr
 export interface NapukettoInternalOptions {
     /** 传输抽象（IPC 动作请求）。 */
     request: RequestFn;
+    /** 远程媒体下载失败等告警日志（缺省静默）。 */
+    logger?: { warn(message: string): void };
 }
 
 /** Peer 目标参数（channelId 解析结果，loader 侧 toPeer 消费）。 */

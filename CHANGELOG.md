@@ -4,6 +4,10 @@
 
 ### Patch Changes
 
+- feat: 发送侧 URL 媒体下载（T3）——img/audio 的 http(s) src 先下载到本地临时文件
+  再走本地路径发送（downloadRemoteMedia：30MB 上限 + 15s 超时 + 流式大小检查，
+  单元素失败回退占位文本 `[图片: url]`/`[语音: url]` 并打 warn，不阻塞其余元素）；
+  下载后语音继续走 silk 归一化链。
 - feat: 登录面板接通 control login——重新登录在登录期（idle/waiting_scan/scanned）走
   `control login {uin}` 原地重登（不重启子进程，loader 端成功结果抢占初始登录竞速），
   ready/failed 仍走 `control restart` 整进程重启；新增「扫码登录」按钮：登录期

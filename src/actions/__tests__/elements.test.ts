@@ -69,11 +69,11 @@ describe("toCanonicalElements", () => {
         expect(toCanonicalElements([img])).toEqual([{ type: "image", path: "C:/tmp/1.png" }]);
     });
 
-    it("img URL → 降级 text（需下载后发送）", () => {
+    it("img URL → 透传 image path（发送前 downloadRemoteMedia 下载，失败回退占位文本）", () => {
         const img = makeElement("img", { src: "https://x/1.png" });
-        expect(toCanonicalElements([img])).toEqual([
-            { type: "text", text: "[图片: https://x/1.png]" },
-        ]);
+        expect(toCanonicalElements([img])).toEqual([{ type: "image", path: "https://x/1.png" }]);
+        const audio = makeElement("audio", { src: "http://x/1.ogg" });
+        expect(toCanonicalElements([audio])).toEqual([{ type: "voice", path: "http://x/1.ogg" }]);
     });
 
     it("img file:// URL → 转真实本地路径（redposter pathToFileURL 实证）", () => {
