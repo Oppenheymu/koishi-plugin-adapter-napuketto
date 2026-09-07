@@ -9,7 +9,7 @@
  * 未来可用；args[0] 为完整事件对象）。
  */
 import type { RawMessage } from "@napuketto/kernel";
-import { adaptRawMessage } from "./adapt.js";
+import { adaptRawMessageWithMedia } from "./adapt.js";
 import type { EventBridge, EventBridgeOptions, Ob11EventPayload } from "./types.js";
 
 /** 消息事件名。 */
@@ -60,12 +60,19 @@ export class NapukettoEventBridge implements EventBridge {
         }
     }
 
-    /** 单条 RawMessage → session → dispatch。 */
+    /** 单条 RawMessage → session → dispatch（含收向媒体富化，异步 fail-soft）。 */
     private dispatchMessage(msg: RawMessage): void {
-        const session = adaptRawMessage(msg, {
+        void this.adaptAndDispatch(msg);
+    }
+
+    private async adaptAndDispatch(msg: RawMessage): Promise<void> {
+        const session = await adaptRawMessageWithMedia(msg, {
             selfId: this.options.selfId(),
             platform: this.options.platform ?? "onebot",
             h: this.options.h,
+            ...(this.options.enrichElements !== undefined
+                ? { enrichElements: this.options.enrichElements }
+                : {}),
         });
         this.options.dispatch(session);
     }

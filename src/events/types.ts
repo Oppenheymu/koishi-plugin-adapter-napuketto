@@ -4,6 +4,7 @@
  * 事件桥做 kernel 事件 → koishi session 翻译。koishi Session 构造由
  * Bot.session(event) 完成（apply() 层注入 dispatch 回调），本层只产字段。
  */
+import type { CanonicalElement } from "@napuketto/kernel";
 import type { IpcEventPayload } from "../ipc/index.js";
 import type { HFn } from "./elements.js";
 
@@ -36,6 +37,8 @@ export interface EventBridgeOptions {
     h: HFn;
     /** 平台名（默认 "onebot"）。 */
     platform?: string;
+    /** 收向元素富化（voice NT silk → WAV 等，2026-09-08 T6；缺省直通）。 */
+    enrichElements?: (elements: CanonicalElement[]) => Promise<CanonicalElement[]>;
 }
 
 /** 原始 OB11 事件（宽松结构：post_type 定大类，其余字段按 OneBot 11 规范按需断言）。 */

@@ -16,7 +16,11 @@ import { type Context as KoishiContext, h as koishiH, type Logger, type Universa
 import { NapukettoInternal } from "../../actions/index.js";
 import type { NapukettoBotConfig } from "../../config.js";
 import { bindKoishiH } from "../../events/elements.js";
-import { NapukettoEventBridge, type NapukettoSessionFields } from "../../events/index.js";
+import {
+    enrichReceiveVoice,
+    NapukettoEventBridge,
+    type NapukettoSessionFields,
+} from "../../events/index.js";
 import type { NapukettoIpcClient } from "../../ipc/index.js";
 import { NapukettoLoginState } from "../../login/index.js";
 import { NapukettoLoginPanel } from "../login-panel.js";
@@ -141,6 +145,8 @@ export function createBridge(host: BridgeHost): NapukettoEventBridge {
         // koishi h 可调用（Element 工厂）；绑定生产 h（elements.ts bindKoishiH）
         h: bindKoishiH(koishiH),
         platform: "onebot",
+        // 收向语音解码（voice NT silk → WAV 可播放；fail-soft，2026-09-08 T6）
+        enrichElements: (elements) => enrichReceiveVoice(elements),
     });
 }
 

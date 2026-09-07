@@ -4,6 +4,10 @@
 
 ### Patch Changes
 
+- feat: 收方向语音解码（T6）——koishi 收到 QQ 语音（silk v3，canonical voice.path 为
+  NT 相对路径不可播）先解析本地 silk 文件（绝对路径直用 / homedir Documents/Tencent
+  Files/nt_qq/global 候选基准）解码为 WAV 落 tmpdir 再派发；全程 fail-soft，解析/解码
+  失败原样透传不阻塞消息；bridge 派发路径异步化（adaptRawMessageWithMedia）。
 - feat: 发送侧 URL 媒体下载（T3）——img/audio 的 http(s) src 先下载到本地临时文件
   再走本地路径发送（downloadRemoteMedia：30MB 上限 + 15s 超时 + 流式大小检查，
   单元素失败回退占位文本 `[图片: url]`/`[语音: url]` 并打 warn，不阻塞其余元素）；

@@ -12,7 +12,7 @@ function recvPayload(messages: unknown): IpcEventPayload {
 }
 
 describe("NapukettoEventBridge", () => {
-    it("Msg/onRecvMsg（数组）→ 逐条 dispatch", () => {
+    it("Msg/onRecvMsg（数组）→ 逐条 dispatch", async () => {
         const dispatch = vi.fn();
         const bridge = new NapukettoEventBridge({
             dispatch,
@@ -52,7 +52,7 @@ describe("NapukettoEventBridge", () => {
                 },
             ]),
         );
-        expect(dispatch).toHaveBeenCalledTimes(2);
+        await vi.waitFor(() => expect(dispatch).toHaveBeenCalledTimes(2));
         expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
             type: "message",
             subtype: "group",
@@ -66,7 +66,7 @@ describe("NapukettoEventBridge", () => {
         });
     });
 
-    it("Msg/onRecvMsg 单条（非数组）兼容", () => {
+    it("Msg/onRecvMsg 单条（非数组）兼容", async () => {
         const dispatch = vi.fn();
         const bridge = new NapukettoEventBridge({
             dispatch,
@@ -89,7 +89,7 @@ describe("NapukettoEventBridge", () => {
                 elements: [{ elementType: 1, textElement: { content: "x" } }],
             }),
         );
-        expect(dispatch).toHaveBeenCalledTimes(1);
+        await vi.waitFor(() => expect(dispatch).toHaveBeenCalledTimes(1));
     });
 
     it("非 Msg/onRecvMsg 事件忽略", () => {
@@ -99,7 +99,7 @@ describe("NapukettoEventBridge", () => {
         expect(dispatch).not.toHaveBeenCalled();
     });
 
-    it("数组含无效项跳过", () => {
+    it("数组含无效项跳过", async () => {
         const dispatch = vi.fn();
         const bridge = new NapukettoEventBridge({ dispatch, selfId: () => "1", h: mockH() });
         const raw: Record<string, unknown> = {
@@ -117,10 +117,10 @@ describe("NapukettoEventBridge", () => {
             elements: [],
         };
         bridge.handle(recvPayload([null, "string", raw]));
-        expect(dispatch).toHaveBeenCalledTimes(1);
+        await vi.waitFor(() => expect(dispatch).toHaveBeenCalledTimes(1));
     });
 
-    it("系统占位消息（senderUin=0）跳过，不 dispatch", () => {
+    it("系统占位消息（senderUin=0）跳过，不 dispatch", async () => {
         const dispatch = vi.fn();
         const bridge = new NapukettoEventBridge({ dispatch, selfId: () => "1", h: mockH() });
         const system: Record<string, unknown> = {
@@ -145,7 +145,7 @@ describe("NapukettoEventBridge", () => {
                 { ...system, msgId: "real", senderUin: "20001" },
             ]),
         );
-        expect(dispatch).toHaveBeenCalledTimes(1);
+        await vi.waitFor(() => expect(dispatch).toHaveBeenCalledTimes(1));
         expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
             type: "message",
             userId: "20001",

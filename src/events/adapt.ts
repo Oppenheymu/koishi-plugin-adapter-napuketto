@@ -10,7 +10,7 @@
  *  - 临时会话（chatType=100）：type=message + subtype=private，guildId=groupCode
  */
 
-import type { RawMessage } from "@napuketto/kernel";
+import type { CanonicalElement, RawMessage } from "@napuketto/kernel";
 import { toCanonicalElements } from "@napuketto/kernel";
 import { type HFn, toKoishiElements } from "./elements.js";
 import type { NapukettoSessionFields } from "./types.js";
@@ -27,6 +27,8 @@ export interface AdaptOptions {
     platform: string;
     /** koishi h() 工厂（生产传 bindKoishiH(h)，单测传 mock）。 */
     h: HFn;
+    /** 收向元素富化（voice NT silk → WAV 等，异步；缺省直通）。2026-09-08 T6。 */
+    enrichElements?: (elements: CanonicalElement[]) => Promise<CanonicalElement[]>;
 }
 
 /** RawMessage → koishi session 字段。 */
@@ -67,5 +69,31 @@ export function adaptRawMessage(msg: RawMessage, options: AdaptOptions): Napuket
     const elements = toKoishiElements(toCanonicalElements(msg), h);
     session.elements = elements;
 
+    return session;
+}
+
+/**
+ * RawMessage → koishi session 字段（含收向媒体富化，异步）。
+ * 富化（voice silk → WAV 等）在 canonical → koishi 元素之前应用；
+ * dispatch 侧异步化（bridge void 消费），失败不阻塞消息派发。
+ */
+export async function adaptRawMessageWithMedia(
+    msg: RawMessage,
+    options: AdaptOptions,
+): Promise<NapukettoSessionFields> {
+    const enrich = options.enrichElements;
+    if (enrich === undefined) {
+        return adaptRawMessage(msg, options);
+    }
+    const { h } = options;
+    // 富化失败按无富化处理（fail-soft：消息必须派发）
+    let canonical: CanonicalElement[];
+    try {
+        canonical = await enrich(toCanonicalElements(msg));
+    } catch {
+        return adaptRawMessage(msg, options);
+    }
+    const session = adaptRawMessage(msg, options);
+    session.elements = toKoishiElements(canonical, h);
     return session;
 }
