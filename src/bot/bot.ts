@@ -81,6 +81,9 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
 
     /** 当前 IPC 客户端引用（driver 重启后换实例，onReady 更新）。 */
     private readonly clientRef: { current: NapukettoIpcClient | null } = { current: null };
+    /** 一次性强制扫码标记（2026-09-08）：面板「扫码登录」置 true → 下次 spawn
+     * 消费（launch 读后清零，NAPUTO_QR_ONLY=1 → 子进程跳过快速登录直接出码）。 */
+    private readonly qrOnlyRef = { current: false };
     /** 控制台登录面板（console 服务就绪后装配；自 bot.ts 拆出，login-panel.ts）。 */
     private readonly panel: NapukettoLoginPanel;
     private driver: NapukettoDriver | null = null;
@@ -121,6 +124,16 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
             logger: this.logger,
             getLogin: () => this.login,
             getClient: () => this.clientRef.current,
+            // 扫码登录（登录期外）：置一次性 qrOnly 标记 + control restart
+            forceQrRestart: () => {
+                this.qrOnlyRef.current = true;
+                const client = this.clientRef.current;
+                if (client === null) {
+                    return false;
+                }
+                client.sendControl({ command: "restart" });
+                return true;
+            },
         });
         // satorijs Context → koishi Context cast——运行时同一实例，仅类型收窄
         this.panel.setup(this.ctx as unknown as KoishiContext);
@@ -278,6 +291,8 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
                 onStage: (message) => {
                     this.logger.info("[napuketto] %s", message);
                 },
+                // 一次性强制扫码标记（面板「扫码登录」；spawn 时消费清零）
+                forceQr: this.qrOnlyRef,
             }),
             // 事件接线（driver-events.ts 工厂：logger/login/bridge/offline 依赖注入）
             events: buildDriverEvents({

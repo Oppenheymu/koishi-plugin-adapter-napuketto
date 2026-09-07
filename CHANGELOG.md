@@ -1,5 +1,16 @@
 # koishi-plugin-adapter-napuketto
 
+## Unreleased
+
+### Patch Changes
+
+- feat: 登录面板接通 control login——重新登录在登录期（idle/waiting_scan/scanned）走
+  `control login {uin}` 原地重登（不重启子进程，loader 端成功结果抢占初始登录竞速），
+  ready/failed 仍走 `control restart` 整进程重启；新增「扫码登录」按钮：登录期
+  `control login {uin,qr:true}` 原地强制出码，其余状态置一次性 qrOnly 标记
+  （NAPUTO_QR_ONLY=1）+ 重启后直接扫码。决策/执行抽为 `login-actions.ts` 纯函数
+  （含单测）；修正 launch.ts 头注释与 design.md §5.12 过时表述。
+
 ## 0.0.29
 
 ### Patch Changes

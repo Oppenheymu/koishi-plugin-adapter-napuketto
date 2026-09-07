@@ -26,6 +26,7 @@ declare module "@koishijs/plugin-console" {
     }
     interface Events {
         [key: `napuketto-login-${string}/relogin`]: (data: { selfId: string }) => void;
+        [key: `napuketto-login-${string}/qr-login`]: (data: { selfId: string }) => void;
         [key: `napuketto-login-${string}/refresh-qr`]: (data: { selfId: string }) => void;
     }
 }
@@ -35,6 +36,9 @@ const LOGIN_SERVICE_PREFIX = "napuketto-login";
 
 /** 重新登录 console 事件名后缀。 */
 const RELOGIN_EVENT_SUFFIX = "relogin";
+
+/** 强制扫码登录 console 事件名后缀（2026-09-08）。 */
+const QR_LOGIN_EVENT_SUFFIX = "qr-login";
 
 /** 刷新二维码 console 事件名后缀。 */
 const REFRESH_QR_EVENT_SUFFIX = "refresh-qr";
@@ -54,12 +58,19 @@ function refreshQrEventName(selfId: string): string {
     return `${loginServiceId(selfId)}/${REFRESH_QR_EVENT_SUFFIX}`;
 }
 
+/** 强制扫码登录事件名（前端 send / 后端 addListener 用）。 */
+function qrLoginEventName(selfId: string): string {
+    return `${loginServiceId(selfId)}/${QR_LOGIN_EVENT_SUFFIX}`;
+}
+
 /** provider 选项。 */
 interface LoginPanelOptions {
     /** 登录账号（QQ 号）。 */
     selfId: string;
-    /** 前端点「重新登录」回调（bot 层发 IPC control restart）。 */
+    /** 前端点「重新登录」回调（bot 层按状态发 control login / restart）。 */
     onRelogin?: () => void;
+    /** 前端点「扫码登录」回调（bot 层发 control login qr / qrOnly+restart，2026-09-08）。 */
+    onQrLogin?: () => void;
     /** 前端点「刷新二维码」回调（bot 层发 IPC login.refreshQr 动作，不重启子进程）。 */
     onRefreshQr?: () => void;
 }
@@ -68,6 +79,7 @@ interface LoginPanelOptions {
 export class NapukettoLoginProvider extends DataService<LoginPanelPayload> {
     private payload: LoginPanelPayload;
     private readonly onRelogin: (() => void) | undefined;
+    private readonly onQrLogin: (() => void) | undefined;
     private readonly onRefreshQr: (() => void) | undefined;
 
     constructor(ctx: Context, options: LoginPanelOptions) {
@@ -84,15 +96,20 @@ export class NapukettoLoginProvider extends DataService<LoginPanelPayload> {
             immediate: true,
         });
         this.onRelogin = options.onRelogin;
+        this.onQrLogin = options.onQrLogin;
         this.onRefreshQr = options.onRefreshQr;
         this.payload = { state: "idle", selfId: options.selfId };
         ctx.logger.info(
             "[napuketto] 控制台登录面板 provider 已创建: serviceId=%s",
             loginServiceId(options.selfId),
         );
-        // 指令上行：前端「重新登录」→ bot 层重启登录流程
+        // 指令上行：前端「重新登录」→ bot 层按状态发 control login / restart
         ctx.console.addListener(reloginEventName(options.selfId) as keyof Events, () => {
             this.onRelogin?.();
+        });
+        // 指令上行：前端「扫码登录」→ bot 层强制扫码（control login qr / qrOnly+restart）
+        ctx.console.addListener(qrLoginEventName(options.selfId) as keyof Events, () => {
+            this.onQrLogin?.();
         });
         // 指令上行：前端「刷新二维码」→ bot 层 IPC 直达 refreshQr（不重启子进程）
         ctx.console.addListener(refreshQrEventName(options.selfId) as keyof Events, () => {

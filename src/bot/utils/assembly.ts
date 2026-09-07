@@ -67,6 +67,8 @@ export interface PanelHost {
     getLogin: () => NapukettoLoginState;
     /** 当前 IPC 客户端（null = 子进程未就绪）。 */
     getClient: () => NapukettoIpcClient | null;
+    /** 强制扫码重启（登录期外「扫码登录」：置 qrOnly 标记 + control restart）。 */
+    forceQrRestart: () => boolean;
 }
 
 /** 装配控制台登录面板（login-panel.ts：装配/reload 去重/连接回放/指令上行）。 */
@@ -89,6 +91,7 @@ export function createPanel(host: PanelHost): NapukettoLoginPanel {
             }
             return client.request(action, params);
         },
+        forceQrRestart: host.forceQrRestart,
         logger: host.logger,
     });
 }

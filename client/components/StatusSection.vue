@@ -28,17 +28,27 @@
       <span class="nick">{{ self.nick }}</span>
       <span class="uin">{{ self.uin }}</span>
     </p>
-    <k-button class="relogin-button" :disabled="qrLoading" @click="emit('relogin')">
-      重新登录
-    </k-button>
+    <div class="button-row">
+      <k-button class="relogin-button" :disabled="qrLoading" @click="emit('relogin')">
+        重新登录
+      </k-button>
+      <k-button class="relogin-button" :disabled="qrLoading" @click="emit('qr-login')">
+        扫码登录
+      </k-button>
+    </div>
   </div>
 
   <!-- failed：登录失败 -->
   <div v-else-if="state === 'failed'" class="status-block">
     <p class="status-title">{{ lastError || message || '登录失败' }}</p>
-    <k-button class="relogin-button" :disabled="qrLoading" @click="emit('relogin')">
-      重新登录
-    </k-button>
+    <div class="button-row">
+      <k-button class="relogin-button" :disabled="qrLoading" @click="emit('relogin')">
+        重新登录
+      </k-button>
+      <k-button class="relogin-button" :disabled="qrLoading" @click="emit('qr-login')">
+        扫码登录
+      </k-button>
+    </div>
   </div>
 </template>
 
@@ -67,6 +77,7 @@ defineProps<{
 
 const emit = defineEmits<{
   (e: 'relogin'): void;
+  (e: 'qr-login'): void;
 }>();
 </script>
 
@@ -101,6 +112,15 @@ const emit = defineEmits<{
 
 .relogin-button {
   margin-top: 0.5rem;
+}
+
+.button-row {
+  display: flex;
+  gap: 0.5rem;
+
+  .relogin-button {
+    margin-top: 0.5rem;
+  }
 }
 
 .spinner {

@@ -711,10 +711,17 @@ kctx.inject(['console'], (ctx) => {
 
 - `LoginView` 三回调（onStateChange/onQrChange/onError）统一走 `pushLoginPanel()`：
   `snapshot → toLoginPanelPayload → panelRef.update()`
-- **重新登录**：`requestRelogin()` → `clientRef.current?.sendControl({ command: 'restart' })`
-  ——重启子进程重新走登录流程（快速登录优先、QR 兜底）。loader `control restart` 已实现
-  （ipc-server `onExit`），**零跨包改动**。⚠️ 强制扫码（跳过快速登录）需 kernel/loader
-  支持（清票据/禁快速登录 env），留待后续轮次。
+- **重新登录 / 强制扫码**（2026-09-08 T2 重做，决策与执行在 `login-actions.ts` 纯函数）：
+  - **重新登录**：登录期（idle/waiting_scan/scanned）→ `control login {uin}` 原地重登
+    （不重启子进程；loader 端成功结果**抢占初始登录竞速**——`bootstrap-core` 的
+    LoginPreemptRef，快速登录风控挂起时强制扫码/重登也能走完装配链到 ready）；
+    ready/failed/client 不可用 → `control restart` 整进程重启（可靠路径）。
+  - **强制扫码**：登录期 → `control login {uin, qr:true}` 原地出码；其余状态 → 置
+    一次性 `qrOnly` 标记（bot.qrOnlyRef）+ `control restart`——重启后子进程经
+    `NAPUTO_QR_ONLY=1` 跳过快速登录直接出码（标记在 spawn 时消费清零，崩溃退避
+    重启不重复扫码）。
+  - ⚠️ 遗留：ready 态**原地软重登**（不重启进程换账号）需装配链重跑（旧 bridges/
+    services 绑定旧 session），不在本轮——ready 态一律整进程重启。
 - **前端入口 addEntry**（bot.ts 模块级去重）：koishi 平台插件注册 Bot 靠**默认导出 Bot 类**
   （`ctx.platform(name)` 只是平台作用域，不是注册 API）——addEntry 放 bot 构造的 console
   inject 回调里，`consoleEntryRegistered` 模块级 flag 保证多 bot 实例只注册一次；
@@ -736,7 +743,7 @@ dispose 会重置 flag，整体正确（无活跃 entry 时 flag 必为 false）
 | 文件 | 职责 |
 |---|---|
 | `index.ts` | `ctx.slot({ type: 'plugin-details', component: Settings, order: 800 })`（B站模板同款挂载点） |
-| `settings.vue` | 状态机渲染：idle/waiting_scan（二维码）/scanned/logged_in/failed + 重新登录按钮；`LoginPanelData` 接口类型化（对齐后端 payload） |
+| `settings.vue` | 状态机渲染：idle/waiting_scan（二维码）/scanned/logged_in/failed + 重新登录/扫码登录按钮；`LoginPanelData` 接口类型化（对齐后端 payload） |
 | `shims.d.ts` | `*.vue`/`*.yaml`/`*.yml` 模块声明（替代上游 `@koishijs/client/global`——其 5.30.11 exports 映射 bug） |
 | `koishijs-client.d.ts` | `@koishijs/client` 本地类型 shim（上游以 TS 源码发布，strict 下会暴露 122 条上游错误；paths 重定向隔离） |
 | `tsconfig.json` | strict 全家桶 + `moduleResolution: bundler` + `paths` 重定向；`types: []`（防 node 全局泄漏）；**已纳入包级 `pnpm check`** |
@@ -745,6 +752,7 @@ dispose 会重置 flag，整体正确（无活跃 entry 时 flag 必为 false）
 - 数据：`store['napuketto-login-<uin>']`（Vue 响应式，`computed` 读取 + 插件名/selfId 校验）
 - 二维码：后端 payload 直接给 `image`（完整 data URI）→ `<img :src="data.image">`；`qr.qrcodeUrl` 链接兜底
 - 重新登录：`send('napuketto-login-<uin>/relogin', { selfId })`
+- 扫码登录：`send('napuketto-login-<uin>/qr-login', { selfId })`（2026-09-08）
 - 过期展示：前端做 3 分钟展示计时器（纯 UI 辅助），真正过期由 kernel 自动 refresh 推新码
 - **零 HTTP 请求**：只读 store + 发 WebSocket 事件
 

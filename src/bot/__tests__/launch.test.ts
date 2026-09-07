@@ -50,6 +50,30 @@ describe("resolveEntry", () => {
     });
 });
 
+describe("resolveLaunchOptions（强制扫码一次性标记，2026-09-08）", () => {
+    it("forceQr.current=true → qrOnly:true 且消费后清零", async () => {
+        const forceQr = { current: true };
+        const options = await resolveLaunchOptions(makeConfig(), {
+            resolveQq: fakeResolveQq,
+            forceQr,
+        });
+        expect(options.qrOnly).toBe(true);
+        expect(forceQr.current).toBe(false);
+    });
+
+    it("forceQr 缺省/未置 → 无 qrOnly（快速登录路径不变）", async () => {
+        const options = await resolveLaunchOptions(makeConfig(), {
+            resolveQq: fakeResolveQq,
+            forceQr: { current: false },
+        });
+        expect(options.qrOnly).toBeUndefined();
+        const optionsNoRef = await resolveLaunchOptions(makeConfig(), {
+            resolveQq: fakeResolveQq,
+        });
+        expect(optionsNoRef.qrOnly).toBeUndefined();
+    });
+});
+
 describe("resolveLaunchOptions", () => {
     it("组装 launchSelfHost 选项（IPC 自建宿主模式）", async () => {
         const options = await resolveLaunchOptions(makeConfig(), { resolveQq: fakeResolveQq });

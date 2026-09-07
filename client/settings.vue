@@ -38,6 +38,7 @@
           :last-error="data.lastError"
           :qr-loading="qrLoading"
           @relogin="relogin"
+          @qr-login="qrLogin"
         />
       </k-comment>
     </div>
@@ -180,6 +181,13 @@ function relogin(): void {
   if (!selfId) return;
   qrLoading.value = true;
   send(`${SERVICE_PREFIX}-${selfId}/relogin`, { selfId });
+}
+
+function qrLogin(): void {
+  const selfId = currentSelfId();
+  if (!selfId) return;
+  qrLoading.value = true;
+  send(`${SERVICE_PREFIX}-${selfId}/qr-login`, { selfId });
 }
 
 function refreshQr(): void {
