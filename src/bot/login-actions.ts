@@ -1,28 +1,37 @@
 /**
- * login-actions.ts：重新登录/强制扫码的动作决策（纯函数，2026-09-08 T2）。
+ * login-actions.ts：重新登录/强制扫码的动作决策（纯函数，2026-09-08 T2；
+ * 2026-09-08 A2 扩展 ready 态软重登）。
  *
  * 两条可用通道：
- *  - control login（原地，不重启子进程）：仅登录期有效——loader 端成功结果
- *    抢占初始登录竞速（bootstrap-core LoginPreemptRef）；ready 态子进程的
- *    服务绑定旧 session，原地重登会造成状态断裂，不可用。
- *  - control restart（整进程重启）：任何状态可靠；配合一次性 NAPUTO_QR_ONLY
- *    标记可在重启后直接扫码（qrOnly 由 launch 消费，见 launch.ts）。
+ *  - control login（原地，不重启子进程）：
+ *    · 登录期（idle/waiting_scan/scanned）——loader 端成功结果抢占初始登录
+ *      竞速（bootstrap-core LoginControl），装配链用新结果继续；
+ *    · logged_in（ready 态）——**软重登**：loader 端清理旧装配面后用新结果
+ *      重跑装配链（relogin.ts 相位机 ②），不重启进程；换账号登录会被
+ *      checkIdentity 拒绝上线（期望行为，防数据目录/assignee 污染）。
+ *  - control restart（整进程重启）：failed 态或 client 不可用时的可靠路径；
+ *    配合一次性 NAPUTO_QR_ONLY 标记可在重启后直接扫码（qrOnly 由 launch 消费）。
  *
  * 决策表（clientReady = IPC client 可用）：
- *  - 登录期（idle/waiting_scan/scanned）+ client 可用 → control login
- *    （qrOnly=true 时 qr:true 强制扫码）
- *  - 其余（logged_in/failed/client 不可用）→ restart（qrOnly 时带 forceQr
- *    一次性标记，重启后子进程直接出码）
+ *  - 登录期/logged_in + client 可用 → control login（qrOnly=true 时 qr:true
+ *    强制扫码——ready 态扫码即软重登切扫码流）
+ *  - failed / client 不可用 → restart（qrOnly 时带 forceQr 一次性标记，
+ *    重启后子进程直接出码）
  */
 
 import type { LoginState } from "@napuketto/kernel";
 
-/** 登录期状态（子进程登录流程进行中，control login 可原地接管）。 */
-const LOGIN_PHASE_STATES: ReadonlySet<string> = new Set(["idle", "waiting_scan", "scanned"]);
+/** control login 可用状态（登录期抢占 + ready 态软重登）。 */
+const CONTROL_LOGIN_STATES: ReadonlySet<string> = new Set([
+    "idle",
+    "waiting_scan",
+    "scanned",
+    "logged_in",
+]);
 
 /** 重新登录/扫码登录计划。 */
 export type ReloginPlan =
-    | { kind: "control-login"; uin: string; qr: boolean }
+    | { kind: "control-login"; uin: string; qr: boolean; soft: boolean }
     | { kind: "restart"; forceQr: boolean };
 
 /** 决策入参。 */
@@ -37,10 +46,15 @@ export interface ReloginPlanInput {
     qrOnly: boolean;
 }
 
-/** 决策重新登录/强制扫码走哪条通道（纯函数）。 */
+/** 决策重新登录/强制扫码走哪条通道（纯函数）。soft = ready 态软重登。 */
 export function planRelogin(input: ReloginPlanInput): ReloginPlan {
-    if (LOGIN_PHASE_STATES.has(input.state) && input.clientReady) {
-        return { kind: "control-login", uin: input.uin, qr: input.qrOnly };
+    if (CONTROL_LOGIN_STATES.has(input.state) && input.clientReady) {
+        return {
+            kind: "control-login",
+            uin: input.uin,
+            qr: input.qrOnly,
+            soft: input.state === "logged_in",
+        };
     }
     return { kind: "restart", forceQr: input.qrOnly };
 }
@@ -62,7 +76,9 @@ export function executeRelogin(plan: ReloginPlan, exec: ReloginExecutor): void {
             exec.logger.info(
                 plan.qr
                     ? "[napuketto] 控制台请求强制扫码（control login qr）"
-                    : "[napuketto] 控制台请求重新登录（control login 原地重登）",
+                    : plan.soft
+                      ? "[napuketto] 控制台请求软重登（control login 原地重登 + 重装配）"
+                      : "[napuketto] 控制台请求重新登录（control login 原地重登）",
             );
             return;
         }

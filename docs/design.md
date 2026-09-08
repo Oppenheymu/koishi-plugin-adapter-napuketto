@@ -711,17 +711,25 @@ kctx.inject(['console'], (ctx) => {
 
 - `LoginView` 三回调（onStateChange/onQrChange/onError）统一走 `pushLoginPanel()`：
   `snapshot → toLoginPanelPayload → panelRef.update()`
-- **重新登录 / 强制扫码**（2026-09-08 T2 重做，决策与执行在 `login-actions.ts` 纯函数）：
+- **重新登录 / 强制扫码**（2026-09-08 T2 重做；2026-09-08 A2 扩展 ready 态软重登，
+  决策与执行在 `login-actions.ts` 纯函数）：
   - **重新登录**：登录期（idle/waiting_scan/scanned）→ `control login {uin}` 原地重登
-    （不重启子进程；loader 端成功结果**抢占初始登录竞速**——`bootstrap-core` 的
-    LoginPreemptRef，快速登录风控挂起时强制扫码/重登也能走完装配链到 ready）；
-    ready/failed/client 不可用 → `control restart` 整进程重启（可靠路径）。
-  - **强制扫码**：登录期 → `control login {uin, qr:true}` 原地出码；其余状态 → 置
-    一次性 `qrOnly` 标记（bot.qrOnlyRef）+ `control restart`——重启后子进程经
-    `NAPUTO_QR_ONLY=1` 跳过快速登录直接出码（标记在 spawn 时消费清零，崩溃退避
-    重启不重复扫码）。
-  - ⚠️ 遗留：ready 态**原地软重登**（不重启进程换账号）需装配链重跑（旧 bridges/
-    services 绑定旧 session），不在本轮——ready 态一律整进程重启。
+    （不重启子进程；loader 端成功结果**抢占初始登录竞速**——`relogin.ts` 的
+    LoginControl 相位机，快速登录风控挂起时强制扫码/重登也能走完装配链到 ready）；
+    **logged_in（ready 态）→ 同样 `control login` 走软重登**（loader 端清理旧装配面
+    后用新登录结果重跑装配链，2026-09-08 A2 已实现，不再整进程重启）；failed /
+    client 不可用 → `control restart` 整进程重启（可靠路径）。
+  - **强制扫码**：登录期/ready 态 → `control login {uin, qr:true}`（原地出码 /
+    软重登切扫码流）；failed/client 不可用 → 置一次性 `qrOnly` 标记（bot.qrOnlyRef）
+    + `control restart`——重启后子进程经 `NAPUTO_QR_ONLY=1` 跳过快速登录直接出码
+    （标记在 spawn 时消费清零，崩溃退避重启不重复扫码）。
+  - **软重登换账号的防线**（driver ready 幂等守卫下软重登完成后 onReady 不会重触发，
+    `checkIdentity` 改由登录消息面补位）：loader 端软重登成功会重播
+    `sendLogin("logged_in", selfInfo)`，driver-events 在收到携带 selfInfo 的
+    logged_in 时调 `bot.handleLoggedIn` → `checkIdentity` 复核——换账号登录
+    （软重登切号）**拒绝上线**（stop driver + offline，防数据目录与
+    channel.assignee/binding 污染，同 2026-08-20 生产事故防线）；同账号通过并同步
+    昵称刷新。初次引导也经此先于 ready 校验一次（幂等，等于提前发现不一致）。
 - **前端入口 addEntry**（bot.ts 模块级去重）：koishi 平台插件注册 Bot 靠**默认导出 Bot 类**
   （`ctx.platform(name)` 只是平台作用域，不是注册 API）——addEntry 放 bot 构造的 console
   inject 回调里，`consoleEntryRegistered` 模块级 flag 保证多 bot 实例只注册一次；

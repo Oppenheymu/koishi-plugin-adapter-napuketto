@@ -4,6 +4,12 @@
 
 ### Patch Changes
 
+- feat: ready 态软重登（2026-09-08 A2）——登录面板「重新登录/扫码登录」在
+  logged_in（ready）态改走 `control login`（loader 端清理旧装配面后重跑装配链，
+  不再整进程重启）；failed/登录期行为不变。软重登换账号防线：driver ready
+  幂等守卫下 onReady 不再重触发，checkIdentity 改由 logged_in 登录消息面补位
+  （driver-events `onLoggedIn` → bot.handleLoggedIn）——换账号登录拒绝上线
+  （同 2026-08-20 事故防线），同账号通过并同步昵称刷新。
 - feat: 收方向语音解码（T6）——koishi 收到 QQ 语音（silk v3，canonical voice.path 为
   NT 相对路径不可播）先解析本地 silk 文件（绝对路径直用 / homedir Documents/Tencent
   Files/nt_qq/global 候选基准）解码为 WAV 落 tmpdir 再派发；全程 fail-soft，解析/解码

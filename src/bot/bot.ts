@@ -29,7 +29,7 @@ import type {
     NapukettoSessionFields,
     Ob11EventPayload,
 } from "../events/index.js";
-import type { NapukettoIpcClient } from "../ipc/index.js";
+import type { IpcLoginPayload, NapukettoIpcClient } from "../ipc/index.js";
 import type { NapukettoLoginState } from "../login/index.js";
 import { buildLaunch } from "./launch.js";
 import type { NapukettoLoginPanel } from "./login-panel.js";
@@ -309,6 +309,8 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
                 isDisconnected: () =>
                     this.status === BOT_STATUS.DISCONNECT || this.identityMismatch,
                 handleReady: () => this.handleReady(),
+                // 软重登换账号检测（2026-09-08）：logged_in 登录消息补位校验
+                onLoggedIn: (self) => this.handleLoggedIn(self),
                 offline: (error) => {
                     this.offline(error);
                 },
@@ -383,6 +385,19 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
             new Error(`账号不一致：配置 selfId=${this.config.selfId}，实际登录 uin=${actual}`),
         );
         return false;
+    }
+
+    /**
+     * logged_in 登录消息补位校验（2026-09-08 软重登）：driver 的 ready 幂等
+     * 守卫下软重登完成后 onReady 不会重触发，账号一致性校验需在登录消息面
+     * 补位——软重登换账号在此拒绝上线（期望行为）；同账号通过则同步 user
+     * 信息（昵称可能刷新）。初次引导也经此先于 ready 校验一次（幂等）。
+     */
+    private handleLoggedIn(self: NonNullable<IpcLoginPayload["selfInfo"]>): void {
+        if (!this.checkIdentity()) {
+            return;
+        }
+        this.syncUser({ uin: self.uin, nick: self.nick });
     }
 
     /** kernel 事件 session 字段 → koishi session → dispatch。 */

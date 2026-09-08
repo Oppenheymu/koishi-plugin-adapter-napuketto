@@ -9,6 +9,7 @@
  * 接口）——不进单测（HANDOVER §7 坑 1 同源）。
  */
 import type { Logger } from "koishi";
+import type { IpcLoginPayload } from "../../ipc/index.js";
 import type { DriverEvents } from "../../driver/types.js";
 import type { NapukettoEventBridge } from "../../events/index.js";
 import type { NapukettoLoginState } from "../../login/index.js";
@@ -25,6 +26,12 @@ export interface DriverEventsHost {
     isDisconnected: () => boolean;
     /** 就绪回调（clientRef 更新 + online + 拉登录信息）。 */
     handleReady: () => void;
+    /**
+     * logged_in 登录消息携带 selfInfo 时的补位校验（2026-09-08 软重登）：
+     * driver 的 ready 幂等守卫下，软重登完成后 onReady 不会重触发，账号一致
+     * 性校验（checkIdentity）需在登录消息面补位——换账号登录在此拒绝上线。
+     */
+    onLoggedIn?(self: NonNullable<IpcLoginPayload["selfInfo"]>): void;
     /** 下线回调（driver 崩溃/错误时置 offline）。 */
     offline: (error?: Error) => void;
 }
@@ -37,6 +44,11 @@ export function buildDriverEvents(host: DriverEventsHost): DriverEvents {
         },
         onLogin: (payload) => {
             host.login.onLogin(payload.state, payload.selfInfo, payload.message);
+            // 软重登换账号检测：logged_in 携带 selfInfo 时立即校验（初次引导
+            // 也会经此早于 ready 触发一次——同账号幂等通过，见 checkIdentity）
+            if (payload.state === "logged_in" && payload.selfInfo !== undefined) {
+                host.onLoggedIn?.(payload.selfInfo);
+            }
         },
         onQr: (qr) => host.login.onQr(qr),
         onEvent: (payload) => {

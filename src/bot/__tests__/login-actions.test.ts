@@ -1,9 +1,11 @@
 /**
- * login-actions.test.ts：重新登录/强制扫码决策与执行单测（2026-09-08 T2）。
+ * login-actions.test.ts：重新登录/强制扫码决策与执行单测（2026-09-08 T2；
+ * 2026-09-08 A2 扩展 ready 态软重登）。
  *
- * planRelogin：登录期 + client 可用 → control login；其余 → restart。
- * executeRelogin：指令发出（mock IPC executor）、control-login 失败回落 restart、
- * forceQr 走 qrOnly+restart。
+ * planRelogin：登录期 + logged_in（ready 态软重登）+ client 可用 → control
+ * login（soft 标记区分重装配语义）；failed / client 不可用 → restart。
+ * executeRelogin：指令发出（mock IPC executor）、control-login 失败回落
+ * restart、forceQr 走 qrOnly+restart。
  */
 import type { LoginState } from "@napuketto/kernel";
 import { describe, expect, it, vi } from "vitest";
@@ -11,39 +13,48 @@ import { executeRelogin, planRelogin, type ReloginExecutor } from "../login-acti
 
 describe("planRelogin", () => {
     it.each(["idle", "waiting_scan", "scanned"] as LoginState[])(
-        "登录期（%s）+ client 可用 → control login（qrOnly 决定 qr）",
+        "登录期（%s）+ client 可用 → control login（qrOnly 决定 qr，soft=false）",
         (state) => {
             expect(planRelogin({ state, uin: "10001", clientReady: true, qrOnly: false })).toEqual({
                 kind: "control-login",
                 uin: "10001",
                 qr: false,
+                soft: false,
             });
             expect(planRelogin({ state, uin: "10001", clientReady: true, qrOnly: true })).toEqual({
                 kind: "control-login",
                 uin: "10001",
                 qr: true,
+                soft: false,
             });
         },
     );
 
-    it.each(["logged_in", "failed"] as LoginState[])(
-        "%s（登录期外）→ restart（qrOnly 决定 forceQr）",
-        (state) => {
-            expect(planRelogin({ state, uin: "10001", clientReady: true, qrOnly: false })).toEqual({
-                kind: "restart",
-                forceQr: false,
-            });
-            expect(planRelogin({ state, uin: "10001", clientReady: true, qrOnly: true })).toEqual({
-                kind: "restart",
-                forceQr: true,
-            });
+    it.each([false, true])(
+        "logged_in（ready 态）+ client 可用 → control login 软重登（soft=true，qr=%s）",
+        (qrOnly) => {
+            expect(planRelogin({ state: "logged_in", uin: "10001", clientReady: true, qrOnly })).toEqual(
+                { kind: "control-login", uin: "10001", qr: qrOnly, soft: true },
+            );
         },
     );
+
+    it("failed（引导失败/进程退出路径）→ restart（qrOnly 决定 forceQr）", () => {
+        expect(planRelogin({ state: "failed", uin: "10001", clientReady: true, qrOnly: false })).toEqual(
+            { kind: "restart", forceQr: false },
+        );
+        expect(planRelogin({ state: "failed", uin: "10001", clientReady: true, qrOnly: true })).toEqual(
+            { kind: "restart", forceQr: true },
+        );
+    });
 
     it("client 不可用（任何状态）→ restart", () => {
         expect(planRelogin({ state: "idle", uin: "1", clientReady: false, qrOnly: false })).toEqual(
             { kind: "restart", forceQr: false },
         );
+        expect(
+            planRelogin({ state: "logged_in", uin: "1", clientReady: false, qrOnly: false }),
+        ).toEqual({ kind: "restart", forceQr: false });
     });
 });
 
@@ -55,6 +66,7 @@ function makeExecutor(
     exec: ReloginExecutor;
     controls: Array<{ command: string; uin?: string; qr?: boolean }>;
     forceQrCount: () => number;
+    info: ReturnType<typeof vi.fn>;
     warn: ReturnType<typeof vi.fn>;
 } {
     const controls: Array<{ command: string; uin?: string; qr?: boolean }> = [];
@@ -64,6 +76,7 @@ function makeExecutor(
     return {
         controls,
         forceQrCount: () => forceQrCalls,
+        info,
         warn,
         exec: {
             sendControl: (payload) => {
@@ -82,14 +95,23 @@ function makeExecutor(
 describe("executeRelogin", () => {
     it("control-login 计划：发出 login 指令（含 uin/qr）", () => {
         const { exec, controls, forceQrCount } = makeExecutor();
-        executeRelogin({ kind: "control-login", uin: "10001", qr: true }, exec);
+        executeRelogin({ kind: "control-login", uin: "10001", qr: true, soft: false }, exec);
         expect(controls).toEqual([{ command: "login", uin: "10001", qr: true }]);
         expect(forceQrCount()).toBe(0);
     });
 
+    it("control-login 软重登（soft=true）：日志区分重装配语义", () => {
+        const { exec, controls, info } = makeExecutor();
+        executeRelogin({ kind: "control-login", uin: "10001", qr: false, soft: true }, exec);
+        expect(controls).toEqual([{ command: "login", uin: "10001", qr: false }]);
+        expect(info).toHaveBeenCalledWith(
+            "[napuketto] 控制台请求软重登（control login 原地重登 + 重装配）",
+        );
+    });
+
     it("control-login 失败（client 不可用）→ 回落 restart 指令", () => {
         const { exec, controls } = makeExecutor(false);
-        executeRelogin({ kind: "control-login", uin: "10001", qr: false }, exec);
+        executeRelogin({ kind: "control-login", uin: "10001", qr: false, soft: true }, exec);
         expect(controls).toEqual([
             { command: "login", uin: "10001", qr: false },
             { command: "restart" },
