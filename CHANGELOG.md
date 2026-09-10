@@ -1,5 +1,16 @@
 # koishi-plugin-adapter-napuketto
 
+## 0.0.30
+
+### Patch Changes
+
+- Updated dependencies [30eeeed]
+- Updated dependencies [c36bac0]
+- Updated dependencies [08119ae]
+  - @napuketto/loader@0.0.31
+  - @napuketto/kernel@0.1.0
+  - @napuketto/adapter@0.1.0
+
 ## Unreleased
 
 ### Patch Changes
