@@ -42,6 +42,7 @@ import {
     resolveAssignPolicy,
 } from "./utils/assembly.js";
 import { buildDriverEvents } from "./utils/driver-events.js";
+import { evaluateIdentity, rejectIdentityMismatch } from "./utils/identity.js";
 import { applySessionFields } from "./utils/session.js";
 import {
     type RawFriend,
@@ -366,24 +367,25 @@ export class NapukettoBot extends Bot<Context, NapukettoBotConfig> {
      * 因此这里不静默采用实际 uin，而是拒绝上线 + 给出可操作提示。
      */
     private checkIdentity(): boolean {
-        const actual = this.login.snapshot.self?.uin;
-        if (actual === undefined || actual === "" || actual === this.config.selfId) {
+        const decision = evaluateIdentity(this.config.selfId, this.login.snapshot.self?.uin);
+        if (decision.kind === "allow") {
             return true;
         }
-        this.identityMismatch = true;
-        this.logger.error(
-            "[napuketto] 账号不一致：配置 selfId=%s，实际登录 uin=%s —— 已拒绝上线，" +
-                "以免污染数据目录与 koishi 的 channel.assignee/binding（会导致群消息被" +
-                "静默丢弃）。请把插件配置 selfId 改成 %s，或改用 %s 重新扫码登录。",
-            this.config.selfId,
-            actual,
-            actual,
-            this.config.selfId,
-        );
-        this.driver?.stop();
-        this.offline(
-            new Error(`账号不一致：配置 selfId=${this.config.selfId}，实际登录 uin=${actual}`),
-        );
+        // 拒绝动作抽 identity.ts（单测可测，2026-09-10）：真实接线在此注入
+        rejectIdentityMismatch(decision, {
+            onError: (message, ...args) => {
+                this.logger.error(message, ...args);
+            },
+            setMismatch: () => {
+                this.identityMismatch = true;
+            },
+            stopDriver: () => {
+                this.driver?.stop();
+            },
+            offline: (error) => {
+                this.offline(error);
+            },
+        });
         return false;
     }
 

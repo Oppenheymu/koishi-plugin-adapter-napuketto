@@ -2,9 +2,10 @@
  * driver-events.test.ts：buildDriverEvents 单测（自 bot.ts setupDriver 拆出的接线工厂）。
  *
  * driver-events.ts 全 type-only import（Logger/DriverEvents 均 import type），
- * 运行时零 koishi 依赖——可直接单测。覆盖：onStatus 日志 / onLogin/onQr 转发 /
- * onEvent 桥转发 + 日志 / onReady / onExit（主动断开不 offline，非主动 offline）/
- * onError（Error 直传、非 Error 包装）/ onLog 日志。
+ * 运行时零 koishi 依赖——可直接单测。覆盖：onStatus 日志 / onLogin/onQr 转发 +
+ * logged_in 补位校验触发（2026-09-10 补）/ onEvent 桥转发 + 日志 / onReady /
+ * onExit（主动断开不 offline，非主动 offline）/ onError（Error 直传、非 Error
+ * 包装）/ onLog 日志。
  */
 
 import type { Logger } from "koishi";
@@ -18,6 +19,7 @@ function createHost(overrides: { isDisconnected?: () => boolean } = {}) {
     const bridge = { handle: vi.fn() };
     const handleReady = vi.fn();
     const offline = vi.fn();
+    const onLoggedIn = vi.fn();
     const host: DriverEventsHost = {
         logger: logger as unknown as Logger,
         login: login as unknown as DriverEventsHost["login"],
@@ -25,8 +27,9 @@ function createHost(overrides: { isDisconnected?: () => boolean } = {}) {
         isDisconnected: overrides.isDisconnected ?? (() => false),
         handleReady,
         offline,
+        onLoggedIn,
     };
-    return { host, logger, login, bridge, handleReady, offline };
+    return { host, logger, login, bridge, handleReady, offline, onLoggedIn };
 }
 
 describe("buildDriverEvents", () => {
@@ -46,6 +49,32 @@ describe("buildDriverEvents", () => {
         } as const;
         events.onLogin?.(payload);
         expect(login.onLogin).toHaveBeenCalledWith("logged_in", payload.selfInfo, undefined);
+    });
+
+    it("onLogin logged_in 携带 selfInfo → onLoggedIn 补位校验转发（软重登换账号检测）", () => {
+        const { host, onLoggedIn } = createHost();
+        const events = buildDriverEvents(host);
+        const selfInfo = { uin: "1", uid: "u1", nick: "n" };
+        events.onLogin?.({ state: "logged_in", selfInfo });
+        expect(onLoggedIn).toHaveBeenCalledTimes(1);
+        expect(onLoggedIn).toHaveBeenCalledWith(selfInfo);
+    });
+
+    it("onLogin 非 logged_in（waiting_scan）即使带 selfInfo 也不触发补位校验", () => {
+        const { host, onLoggedIn } = createHost();
+        const events = buildDriverEvents(host);
+        events.onLogin?.({
+            state: "waiting_scan",
+            selfInfo: { uin: "1", uid: "u1", nick: "n" },
+        });
+        expect(onLoggedIn).not.toHaveBeenCalled();
+    });
+
+    it("onLogin logged_in 但无 selfInfo（快登直通等）不触发补位校验", () => {
+        const { host, onLoggedIn } = createHost();
+        const events = buildDriverEvents(host);
+        events.onLogin?.({ state: "logged_in" });
+        expect(onLoggedIn).not.toHaveBeenCalled();
     });
 
     it("onQr → login.onQr 转发", () => {

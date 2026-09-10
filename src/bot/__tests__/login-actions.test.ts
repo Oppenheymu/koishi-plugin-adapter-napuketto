@@ -33,19 +33,19 @@ describe("planRelogin", () => {
     it.each([false, true])(
         "logged_in（ready 态）+ client 可用 → control login 软重登（soft=true，qr=%s）",
         (qrOnly) => {
-            expect(planRelogin({ state: "logged_in", uin: "10001", clientReady: true, qrOnly })).toEqual(
-                { kind: "control-login", uin: "10001", qr: qrOnly, soft: true },
-            );
+            expect(
+                planRelogin({ state: "logged_in", uin: "10001", clientReady: true, qrOnly }),
+            ).toEqual({ kind: "control-login", uin: "10001", qr: qrOnly, soft: true });
         },
     );
 
     it("failed（引导失败/进程退出路径）→ restart（qrOnly 决定 forceQr）", () => {
-        expect(planRelogin({ state: "failed", uin: "10001", clientReady: true, qrOnly: false })).toEqual(
-            { kind: "restart", forceQr: false },
-        );
-        expect(planRelogin({ state: "failed", uin: "10001", clientReady: true, qrOnly: true })).toEqual(
-            { kind: "restart", forceQr: true },
-        );
+        expect(
+            planRelogin({ state: "failed", uin: "10001", clientReady: true, qrOnly: false }),
+        ).toEqual({ kind: "restart", forceQr: false });
+        expect(
+            planRelogin({ state: "failed", uin: "10001", clientReady: true, qrOnly: true }),
+        ).toEqual({ kind: "restart", forceQr: true });
     });
 
     it("client 不可用（任何状态）→ restart", () => {
